@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.expo/
+.expo-shared/
+*.log
+.env
+.env.local
+backend/uploads/
+backend/uploads-test/
+backend/prisma/dev.db
+.DS_Store
+coverage/
+web-build/

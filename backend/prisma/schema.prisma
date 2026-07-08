@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BookFormat {
+  EPUB
+  PDF
+  TXT
+}
+
+enum AnnotationType {
+  HIGHLIGHT
+  NOTE
+  BOOKMARK
+  DRAWING
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  books         Book[]
+  progress      ReadingProgress[]
+  annotations   Annotation[]
+  collections   Collection[]
+  sessions      ReadingSession[]
+  goal          ReadingGoal?
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Book {
+  id              String     @id @default(uuid())
+  userId          String
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String
+  author          String?
+  format          BookFormat
+  storageKey      String
+  fileSizeBytes   Int
+  coverStorageKey String?
+  totalLocations  Int?
+  checksumSha256  String
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  progress        ReadingProgress?
+  annotations     Annotation[]
+  collectionBooks CollectionBook[]
+
+  @@index([userId])
+  @@unique([userId, checksumSha256])
+}
+
+model ReadingProgress {
+  id         String   @id @default(uuid())
+  userId     String
+  bookId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book       Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  location   String
+  percentage Float    @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Annotation {
+  id            String         @id @default(uuid())
+  userId        String
+  bookId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book          Book           @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  type          AnnotationType
+  locationStart String
+  locationEnd   String?
+  color         String?
+  noteText      String?
+  drawingData   Json?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([userId, bookId])
+  @@index([bookId, locationStart])
+}
+
+model Collection {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  books CollectionBook[]
+}
+
+model CollectionBook {
+  collectionId String
+  bookId       String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  book         Book       @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  addedAt      DateTime   @default(now())
+
+  @@id([collectionId, bookId])
+}
+
+model ReadingSession {
+  id              String   @id @default(uuid())
+  userId          String
+  bookId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt       DateTime
+  endedAt         DateTime
+  durationSeconds Int
+
+  @@index([userId, startedAt])
+}
+
+model ReadingGoal {
+  userId           String @id
+  user             User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dailyMinutesGoal Int    @default(20)
+}

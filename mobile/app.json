@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "ereader",
+    "slug": "ereader",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ereader.app"
+    },
+    "android": {
+      "package": "com.ereader.app"
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
