@@ -133,11 +133,12 @@ export default function LibraryScreen() {
       >
         {cover}
         <View style={grid ? undefined : styles.flex}>
-          {!grid && (
-            <Text style={[styles.title, { color: p.text }]} numberOfLines={2}>
-              {item.title}
-            </Text>
-          )}
+          <Text
+            style={[styles.title, { color: p.text }, grid && styles.gridTitle]}
+            numberOfLines={grid ? 1 : 2}
+          >
+            {item.title}
+          </Text>
           <Text style={{ color: p.muted, fontSize: 12 }} numberOfLines={1}>
             {grid ? label : `${item.author ?? "Unknown author"} · ${item.format}`}
           </Text>
@@ -396,6 +397,7 @@ const styles = StyleSheet.create({
   },
   gridContent: { paddingHorizontal: 12 },
   gridItem: { width: "33.33%", padding: 6 },
+  gridTitle: { fontSize: 13 },
   title: { fontSize: 16, fontWeight: "600" },
   bar: { height: 4, marginTop: 6, marginBottom: 2, borderRadius: 2, overflow: "hidden" },
   empty: { textAlign: "center", marginTop: 60, padding: 24 },

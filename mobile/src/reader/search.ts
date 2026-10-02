@@ -7,6 +7,20 @@ export interface SearchHit {
   snippet: string;
 }
 
+/** Moves `i` forward to the next word start so a snippet never begins mid-word (unless at the text start). */
+function wordStart(text: string, i: number): number {
+  if (i === 0 || /\s/.test(text[i - 1])) return i;
+  const next = text.slice(i).search(/\s/);
+  return next < 0 ? i : i + next + 1;
+}
+
+/** Moves `i` back to the end of a word so a snippet never ends mid-word (unless at the text end). */
+function wordEnd(text: string, i: number): number {
+  if (i >= text.length || /\s/.test(text[i])) return i;
+  const prev = text.slice(0, i).search(/\S+$/);
+  return prev <= 0 ? i : prev;
+}
+
 export function searchBook(book: ParsedBook, query: string, limit = 100): SearchHit[] {
   const q = query.trim().toLowerCase();
   if (q.length < 2) return [];
@@ -20,8 +34,8 @@ export function searchBook(book: ParsedBook, query: string, limit = 100): Search
     for (;;) {
       const idx = lower.indexOf(q, from);
       if (idx < 0) break;
-      const a = Math.max(0, idx - 30);
-      const b = Math.min(text.length, idx + q.length + 50);
+      const a = wordStart(text, Math.max(0, idx - 30));
+      const b = wordEnd(text, Math.min(text.length, idx + q.length + 50));
       hits.push({
         chapterIndex: ci,
         offset: base + idx,

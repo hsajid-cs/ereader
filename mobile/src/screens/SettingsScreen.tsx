@@ -108,6 +108,16 @@ export default function SettingsScreen() {
         </Pressable>
       </View>
 
+      <Text style={[styles.label, { color: p.text }]}>Account</Text>
+      <View style={styles.row}>
+        <Pressable onPress={() => setDialog("password")}>
+          <Text style={[styles.step, { color: p.accent }]}>Change password</Text>
+        </Pressable>
+        <Pressable onPress={() => setDialog("delete")}>
+          <Text style={[styles.step, { color: "#d33" }]}>Delete account</Text>
+        </Pressable>
+      </View>
+
       <Pressable
         onPress={() =>
           Alert.alert(

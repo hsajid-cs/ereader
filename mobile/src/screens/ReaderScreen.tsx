@@ -612,7 +612,8 @@ function TextReader({ book }: { book: Book }) {
                 }}
               >
                 <Text style={{ color: p.muted, fontSize: 12 }}>
-                  {parsed?.chapters[item.chapterIndex]?.title}
+                  {parsed?.chapters[item.chapterIndex]?.title} · Page{" "}
+                  {pageIndexForOffset(pages, item.offset) + 1}
                 </Text>
                 <Text style={{ color: p.text }}>{item.snippet}</Text>
               </Pressable>

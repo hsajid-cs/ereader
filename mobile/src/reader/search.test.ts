@@ -82,3 +82,24 @@ test("search ignores image markers", () => {
   expect(hits).toHaveLength(1); // only the real text match, not the marker
   expect(hits[0].snippet).not.toContain("￼");
 });
+
+test("snippets start and end on word boundaries", () => {
+  const book = {
+    chapters: [
+      {
+        title: "a",
+        text: "Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november",
+      },
+    ],
+  };
+  const [hit] = searchBook(book, "golf");
+  expect(
+    hit.snippet
+      .replace(/…/g, "")
+      .trim()
+      .split(" ")
+      .every((w) => /^[a-z]+$/.test(w)),
+  ).toBe(true);
+  expect(hit.snippet.startsWith("…")).toBe(true);
+  expect(hit.snippet).toContain("golf");
+});
