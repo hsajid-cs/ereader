@@ -1,55 +1,79 @@
-import type { Annotation } from "@ereader/shared";
+import type { Annotation, Book, DrawingStroke } from "@ereader/shared";
 import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import * as Brightness from "expo-brightness";
+import { useKeepAwake } from "expo-keep-awake";
+import * as Speech from "expo-speech";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  AppState,
   FlatList,
-  LayoutChangeEvent,
   Modal,
   Pressable,
+  ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
   View,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
 } from "react-native";
 
-import { api } from "../api/client";
+import { createAnnotation, deleteAnnotation, loadAnnotations, loadProgress } from "../offline/data";
 import type { RootStackParamList } from "../navigation/types";
 import { loadBook } from "../reader/bookCache";
+import { lookup } from "../reader/dictionary";
+import DrawingLayer from "../reader/DrawingLayer";
+import { formatExport } from "../reader/exportNotes";
 import {
   estimateCharsPerPage,
   pageIndexForOffset,
   paginate,
   totalLength,
 } from "../reader/paginate";
-import {
-  paragraphSpans,
-  segmentParagraph,
-  type Mark,
-  type ParagraphSpan,
-} from "../reader/segments";
+import PageText from "../reader/PageText";
+import { textForRange } from "../reader/range";
+import { searchBook } from "../reader/search";
+import type { Mark } from "../reader/segments";
+import { useReadingSync } from "../reader/useReadingSync";
+import { cleanWord, type Word } from "../reader/words";
+import { useAuth } from "../store/auth";
 import { highlightColors, palettes, useSettings } from "../theme";
-
-const LINE_HEIGHT = 1.5;
-const PAD = 24;
+import PdfReaderScreen from "./PdfReaderScreen";
 
 export default function ReaderScreen() {
   const { book } = useRoute<RouteProp<RootStackParamList, "Reader">>().params;
+  return book.format === "PDF" ? <PdfReaderScreen book={book} /> : <TextReader book={book} />;
+}
+
+const BOTTOM = 36;
+const PEN_COLORS = ["#d32f2f", "#1976d2", "#388e3c", "#111111"];
+
+function TextReader({ book }: { book: Book }) {
+  useKeepAwake();
   const navigation = useNavigation();
   const qc = useQueryClient();
-  const { theme, fontSize, serif, setTheme, setFontSize, setSerif } = useSettings();
+  const userId = useAuth((s) => s.user?.id ?? "");
+  const settings = useSettings();
+  const { theme, fontSize, serif, lineHeight, margin } = settings;
   const p = palettes[theme];
+  const { report } = useReadingSync(book.id);
 
   const [area, setArea] = useState({ width: 0, height: 0 });
   const [offset, setOffset] = useState<number | null>(null);
   const [chrome, setChrome] = useState(false);
-  const [panel, setPanel] = useState<"none" | "toc" | "settings">("none");
+  const [panel, setPanel] = useState<"none" | "toc" | "settings" | "search" | "define">("none");
   const [tocTab, setTocTab] = useState<"contents" | "bookmarks" | "highlights">("contents");
-  const [selected, setSelected] = useState<ParagraphSpan | null>(null);
+  const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
+  const anchor = useRef<Word | null>(null);
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [speaking, setSpeaking] = useState(false);
+  const [brightness, setBrightness] = useState(0.6);
+  const [pen, setPen] = useState<{ color: string; widthPx: number } | null>(null);
+  const [draft, setDraft] = useState<DrawingStroke[]>([]);
 
   const bookQuery = useQuery({
     queryKey: ["bookText", book.id],
@@ -58,24 +82,23 @@ export default function ReaderScreen() {
   });
   const annotationsQuery = useQuery({
     queryKey: ["annotations", book.id],
-    queryFn: () => api.listAnnotations(book.id),
+    queryFn: () => loadAnnotations(book.id, userId),
   });
   const progressQuery = useQuery({
     queryKey: ["progress", book.id],
-    queryFn: () => api.getProgress(book.id),
+    queryFn: () => loadProgress(book.id),
   });
 
   const parsed = bookQuery.data;
-  const textHeight = Math.max(0, area.height - PAD * 2);
-  const textWidth = Math.max(0, area.width - PAD * 2);
+  const textHeight = Math.max(0, area.height - margin * 2 - BOTTOM);
+  const textWidth = Math.max(0, area.width - margin * 2);
 
   const pages = useMemo(() => {
     if (!parsed || textWidth === 0) return [];
-    return paginate(parsed, estimateCharsPerPage(textWidth, textHeight, fontSize, LINE_HEIGHT));
-  }, [parsed, textWidth, textHeight, fontSize]);
+    return paginate(parsed, estimateCharsPerPage(textWidth, textHeight, fontSize, lineHeight));
+  }, [parsed, textWidth, textHeight, fontSize, lineHeight]);
   const total = useMemo(() => (parsed ? totalLength(parsed) : 0), [parsed]);
 
-  // Resume from saved progress once everything has loaded.
   useEffect(() => {
     if (offset === null && progressQuery.isSuccess && parsed) {
       setOffset(progressQuery.data ? Number(progressQuery.data.location) || 0 : 0);
@@ -88,70 +111,22 @@ export default function ReaderScreen() {
   const goTo = useCallback(
     (index: number) => {
       const target = pages[Math.min(pages.length - 1, Math.max(0, index))];
-      if (target) setOffset(target.start);
+      if (target) {
+        setOffset(target.start);
+        setSelection(null);
+        anchor.current = null;
+      }
     },
     [pages],
   );
 
-  // Debounced progress sync.
-  const latest = useRef({ start: 0, percentage: 0 });
-  const syncTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
-    if (!page || total === 0) return;
-    latest.current = { start: page.start, percentage: Math.min(100, (page.start / total) * 100) };
-    clearTimeout(syncTimer.current);
-    syncTimer.current = setTimeout(() => flushProgress(), 1500);
-    return () => clearTimeout(syncTimer.current);
-  }, [page?.start, total]);
+    if (page && total > 0) report(String(page.start), (page.start / total) * 100);
+  }, [page, total, report]);
 
-  const flushProgress = useCallback(() => {
-    const { start, percentage } = latest.current;
-    if (start === 0 && percentage === 0 && !progressQuery.data) return;
-    api.putProgress(book.id, { location: String(start), percentage }).then(
-      () => qc.invalidateQueries({ queryKey: ["progress", book.id] }),
-      () => undefined,
-    );
-  }, [book.id, qc, progressQuery.data]);
+  const annotations = useMemo(() => annotationsQuery.data ?? [], [annotationsQuery.data]);
+  const refreshAnnotations = () => qc.invalidateQueries({ queryKey: ["annotations", book.id] });
 
-  // Reading-session tracking.
-  const sessionStart = useRef(new Date());
-  const logSession = useCallback(() => {
-    const end = new Date();
-    const seconds = Math.round((end.getTime() - sessionStart.current.getTime()) / 1000);
-    if (seconds >= 5) {
-      api
-        .logSession({
-          bookId: book.id,
-          startedAt: sessionStart.current.toISOString(),
-          endedAt: end.toISOString(),
-          durationSeconds: seconds,
-        })
-        .then(
-          () => qc.invalidateQueries({ queryKey: ["stats"] }),
-          () => undefined,
-        );
-    }
-    sessionStart.current = end;
-  }, [book.id, qc]);
-
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (s) => {
-      if (s === "active") sessionStart.current = new Date();
-      else {
-        logSession();
-        flushProgress();
-      }
-    });
-    return () => {
-      sub.remove();
-      logSession();
-      flushProgress();
-      qc.invalidateQueries({ queryKey: ["books"] });
-    };
-  }, [logSession, flushProgress, qc]);
-
-  // Annotations -> marks & bookmarks.
-  const annotations = annotationsQuery.data ?? [];
   const marks: Mark[] = useMemo(
     () =>
       annotations
@@ -165,66 +140,157 @@ export default function ReaderScreen() {
         })),
     [annotations],
   );
-  const bookmarkHere = page
-    ? annotations.find(
-        (a) =>
-          a.type === "BOOKMARK" &&
-          Number(a.locationStart) >= page.start &&
-          Number(a.locationStart) < page.end,
-      )
-    : undefined;
+  const inPage = (a: Annotation) =>
+    !!page && Number(a.locationStart) >= page.start && Number(a.locationStart) < page.end;
+  const bookmarkHere = annotations.find((a) => a.type === "BOOKMARK" && inPage(a));
 
-  const refreshAnnotations = () => qc.invalidateQueries({ queryKey: ["annotations", book.id] });
+  const savedStrokes = useMemo(
+    () =>
+      annotations
+        .filter((a) => a.type === "DRAWING" && a.drawingData && inPage(a))
+        .filter(
+          (a) =>
+            a.drawingData!.fontSize === fontSize &&
+            a.drawingData!.viewport.width === Math.round(area.width) &&
+            a.drawingData!.viewport.height === Math.round(area.height),
+        )
+        .flatMap((a) => a.drawingData!.strokes),
+    [annotations, page, fontSize, area],
+  );
+  const hiddenDrawings =
+    annotations.some((a) => a.type === "DRAWING" && inPage(a)) && savedStrokes.length === 0;
 
   async function toggleBookmark() {
     if (!page) return;
-    if (bookmarkHere) await api.deleteAnnotation(bookmarkHere.id);
-    else
-      await api.createAnnotation(book.id, { type: "BOOKMARK", locationStart: String(page.start) });
+    if (bookmarkHere) await deleteAnnotation(bookmarkHere.id);
+    else await createAnnotation(book.id, { type: "BOOKMARK", locationStart: String(page.start) });
     await refreshAnnotations();
   }
 
+  const selectedText =
+    selection && parsed ? textForRange(parsed, selection.start, selection.end) : "";
+
   async function highlight(color: string) {
-    if (!selected) return;
-    await api.createAnnotation(book.id, {
+    if (!selection) return;
+    await createAnnotation(book.id, {
       type: "HIGHLIGHT",
-      locationStart: String(selected.start),
-      locationEnd: String(selected.end),
+      locationStart: String(selection.start),
+      locationEnd: String(selection.end),
       color,
     });
-    setSelected(null);
+    clearSelection();
     await refreshAnnotations();
   }
 
   async function saveNote() {
-    if (!selected || !noteDraft?.trim()) return;
-    await api.createAnnotation(book.id, {
+    if (!selection || !noteDraft?.trim()) return;
+    await createAnnotation(book.id, {
       type: "NOTE",
-      locationStart: String(selected.start),
-      locationEnd: String(selected.end),
+      locationStart: String(selection.start),
+      locationEnd: String(selection.end),
       noteText: noteDraft.trim(),
     });
     setNoteDraft(null);
-    setSelected(null);
+    clearSelection();
     await refreshAnnotations();
   }
 
-  async function removeMarksIn(span: ParagraphSpan) {
-    const hits = marks.filter((m) => m.start < span.end && m.end > span.start);
-    await Promise.all(hits.map((m) => api.deleteAnnotation(m.id)));
-    setSelected(null);
+  async function removeMarksInSelection() {
+    if (!selection) return;
+    const hits = marks.filter((m) => m.start < selection.end && m.end > selection.start);
+    await Promise.all(hits.map((m) => deleteAnnotation(m.id)));
+    clearSelection();
     await refreshAnnotations();
   }
 
-  const fontFamily = serif ? "serif" : undefined;
-  const onLayout = (e: LayoutChangeEvent) => setArea(e.nativeEvent.layout);
+  function clearSelection() {
+    setSelection(null);
+    anchor.current = null;
+  }
+
+  function onWordLongPress(w: Word) {
+    anchor.current = w;
+    setSelection({ start: w.start, end: w.end });
+  }
+
+  function onWordPress(w: Word, e: GestureResponderEvent) {
+    if (selection && anchor.current) {
+      setSelection({
+        start: Math.min(anchor.current.start, w.start),
+        end: Math.max(anchor.current.end, w.end),
+      });
+    } else {
+      onTap(e.nativeEvent.pageX);
+    }
+  }
 
   function onTap(x: number) {
+    if (pen) return;
+    if (selection) return clearSelection();
     if (chrome) return setChrome(false);
     if (x < area.width * 0.3) goTo(pageIndex - 1);
     else if (x > area.width * 0.7) goTo(pageIndex + 1);
     else setChrome(true);
   }
+
+  // Read aloud: speak the page, then advance when finished.
+  useEffect(() => {
+    if (!speaking || !page) return;
+    Speech.stop();
+    Speech.speak(page.text, {
+      onDone: () => {
+        if (pageIndex + 1 < pages.length) goTo(pageIndex + 1);
+        else setSpeaking(false);
+      },
+      onError: () => setSpeaking(false),
+    });
+    return () => {
+      Speech.stop();
+    };
+  }, [speaking, page, pageIndex, pages.length, goTo]);
+
+  function changeBrightness(delta: number) {
+    const next = Math.min(1, Math.max(0.05, brightness + delta));
+    setBrightness(next);
+    Brightness.setBrightnessAsync(next).catch(() => undefined);
+  }
+
+  async function saveDrawing() {
+    if (!page || draft.length === 0) return setPen(null);
+    await createAnnotation(book.id, {
+      type: "DRAWING",
+      locationStart: String(page.start),
+      drawingData: {
+        strokes: draft,
+        viewport: { width: Math.round(area.width), height: Math.round(area.height) },
+        fontSize,
+        theme,
+      },
+    });
+    setDraft([]);
+    setPen(null);
+    await refreshAnnotations();
+  }
+
+  async function clearPageDrawings() {
+    const hits = annotations.filter((a) => a.type === "DRAWING" && inPage(a));
+    await Promise.all(hits.map((a) => deleteAnnotation(a.id)));
+    setDraft([]);
+    await refreshAnnotations();
+  }
+
+  const searchHits = useMemo(
+    () => (parsed && panel === "search" ? searchBook(parsed, query) : []),
+    [parsed, panel, query],
+  );
+
+  const definition = useQuery({
+    queryKey: ["define", cleanWord(selectedText.split(" ")[0] ?? "")],
+    enabled: panel === "define" && !!cleanWord(selectedText.split(" ")[0] ?? ""),
+    queryFn: () => lookup(cleanWord(selectedText.split(" ")[0])),
+    staleTime: Infinity,
+    retry: false,
+  });
 
   const toc = useMemo(() => {
     if (!parsed || !pages.length) return [];
@@ -233,114 +299,147 @@ export default function ReaderScreen() {
       .filter((t) => t.index >= 0);
   }, [parsed, pages]);
 
+  async function shareNotes() {
+    if (!parsed) return;
+    await Share.share({ message: formatExport(book.title, book.author, annotations, parsed) });
+  }
+
+  const fontFamily = serif ? "serif" : undefined;
   const error = bookQuery.error as Error | null;
+  const percent = page ? Math.round((page.start / Math.max(1, total)) * 100) : 0;
 
   return (
     <View style={[styles.root, { backgroundColor: p.background }]}>
-      <View style={styles.flex} onLayout={onLayout}>
+      <View style={styles.flex} onLayout={(e: LayoutChangeEvent) => setArea(e.nativeEvent.layout)}>
         {error ? (
           <Text style={[styles.center, { color: p.text }]}>{error.message}</Text>
         ) : !page ? (
           <ActivityIndicator style={styles.center} color={p.accent} />
         ) : (
-          <Pressable
-            style={[styles.flex, { padding: PAD }]}
-            onPress={(e) => onTap(e.nativeEvent.locationX)}
-          >
-            {paragraphSpans(page.text, page.start).map((span) => (
-              <Text
-                key={span.start}
-                onLongPress={() => setSelected(span)}
-                style={{
-                  color: p.text,
-                  fontSize,
-                  lineHeight: fontSize * LINE_HEIGHT,
-                  fontFamily,
-                  marginBottom: fontSize * 0.5,
-                }}
-              >
-                {segmentParagraph(span, marks).map((seg, i) => (
-                  <Text
-                    key={i}
-                    style={
-                      seg.mark
-                        ? {
-                            backgroundColor: seg.mark.color ? seg.mark.color + "aa" : undefined,
-                            textDecorationLine: seg.mark.isNote ? "underline" : "none",
-                            color: seg.mark.color ? "#111" : p.text,
-                          }
-                        : undefined
-                    }
-                  >
-                    {seg.text}
-                  </Text>
-                ))}
-              </Text>
-            ))}
-          </Pressable>
+          <>
+            <Pressable
+              style={[styles.flex, { padding: margin, paddingBottom: BOTTOM }]}
+              onPress={(e) => onTap(e.nativeEvent.pageX)}
+            >
+              <PageText
+                page={page}
+                marks={marks}
+                selection={selection}
+                color={p.text}
+                fontSize={fontSize}
+                lineHeight={lineHeight}
+                fontFamily={fontFamily}
+                onWordPress={onWordPress}
+                onWordLongPress={onWordLongPress}
+              />
+            </Pressable>
+            <DrawingLayer
+              width={area.width}
+              height={area.height}
+              strokes={[...savedStrokes, ...draft]}
+              drawing={pen ?? undefined}
+              onStroke={(s) => setDraft((d) => [...d, s])}
+            />
+          </>
         )}
       </View>
 
       {page && (
         <Text style={[styles.footer, { color: p.muted }]}>
-          {parsed?.chapters[page.chapterIndex]?.title} ·{" "}
-          {Math.round((page.start / Math.max(1, total)) * 100)}% · Page {pageIndex + 1} of{" "}
+          {parsed?.chapters[page.chapterIndex]?.title} · {percent}% · Page {pageIndex + 1} of{" "}
           {pages.length}
+          {hiddenDrawings ? " · drawings hidden at this size" : ""}
         </Text>
+      )}
+
+      {selection && !pen && (
+        <View style={[styles.selectionBar, { backgroundColor: p.surface, borderColor: p.border }]}>
+          {highlightColors.map((c) => (
+            <Pressable
+              key={c}
+              onPress={() => highlight(c)}
+              style={[styles.swatch, { backgroundColor: c }]}
+            />
+          ))}
+          <Pressable onPress={() => setNoteDraft("")}>
+            <Text style={[styles.action, { color: p.accent }]}>Note</Text>
+          </Pressable>
+          <Pressable onPress={() => setPanel("define")}>
+            <Text style={[styles.action, { color: p.accent }]}>Define</Text>
+          </Pressable>
+          {marks.some((m) => m.start < selection.end && m.end > selection.start) && (
+            <Pressable onPress={removeMarksInSelection}>
+              <Text style={[styles.action, { color: "#d33" }]}>Remove</Text>
+            </Pressable>
+          )}
+          <Pressable onPress={clearSelection}>
+            <Text style={[styles.action, { color: p.muted }]}>✕</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {pen && (
+        <View style={[styles.selectionBar, { backgroundColor: p.surface, borderColor: p.border }]}>
+          {PEN_COLORS.map((c) => (
+            <Pressable
+              key={c}
+              onPress={() => setPen({ ...pen, color: c })}
+              style={[
+                styles.swatch,
+                { backgroundColor: c, borderWidth: pen.color === c ? 3 : 0, borderColor: p.accent },
+              ]}
+            />
+          ))}
+          <Pressable onPress={() => setPen({ ...pen, widthPx: pen.widthPx === 3 ? 7 : 3 })}>
+            <Text style={[styles.action, { color: p.accent }]}>
+              {pen.widthPx === 3 ? "Thin" : "Thick"}
+            </Text>
+          </Pressable>
+          <Pressable onPress={() => setDraft((d) => d.slice(0, -1))}>
+            <Text style={[styles.action, { color: p.accent }]}>Undo</Text>
+          </Pressable>
+          <Pressable onPress={clearPageDrawings}>
+            <Text style={[styles.action, { color: "#d33" }]}>Clear</Text>
+          </Pressable>
+          <Pressable onPress={saveDrawing}>
+            <Text style={[styles.action, { color: p.accent }]}>Done</Text>
+          </Pressable>
+        </View>
       )}
 
       {chrome && (
         <View style={[styles.topBar, { backgroundColor: p.surface, borderColor: p.border }]}>
           <Pressable onPress={() => navigation.goBack()}>
-            <Text style={[styles.bar, { color: p.accent }]}>‹ Back</Text>
+            <Text style={[styles.bar, { color: p.accent }]}>‹</Text>
           </Pressable>
           <Text numberOfLines={1} style={[styles.barTitle, { color: p.text }]}>
             {book.title}
           </Text>
+          <Pressable onPress={() => setPanel("search")}>
+            <Text style={[styles.bar, { color: p.accent }]}>🔍</Text>
+          </Pressable>
           <Pressable onPress={() => setPanel("toc")}>
             <Text style={[styles.bar, { color: p.accent }]}>☰</Text>
           </Pressable>
           <Pressable onPress={toggleBookmark}>
             <Text style={[styles.bar, { color: p.accent }]}>{bookmarkHere ? "★" : "☆"}</Text>
           </Pressable>
+          <Pressable onPress={() => setSpeaking((s) => !s)}>
+            <Text style={[styles.bar, { color: p.accent }]}>{speaking ? "⏹" : "🔊"}</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setPen({ color: PEN_COLORS[0], widthPx: 3 });
+              setChrome(false);
+            }}
+          >
+            <Text style={[styles.bar, { color: p.accent }]}>✎</Text>
+          </Pressable>
           <Pressable onPress={() => setPanel("settings")}>
             <Text style={[styles.bar, { color: p.accent }]}>Aa</Text>
           </Pressable>
         </View>
       )}
-
-      {/* Paragraph actions */}
-      <Modal
-        visible={!!selected && noteDraft === null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSelected(null)}
-      >
-        <Pressable style={styles.backdrop} onPress={() => setSelected(null)}>
-          <View style={[styles.sheet, { backgroundColor: p.surface }]}>
-            <Text style={[styles.sheetTitle, { color: p.muted }]} numberOfLines={2}>
-              {selected?.text}
-            </Text>
-            <View style={styles.row}>
-              {highlightColors.map((c) => (
-                <Pressable
-                  key={c}
-                  onPress={() => highlight(c)}
-                  style={[styles.swatch, { backgroundColor: c }]}
-                />
-              ))}
-            </View>
-            <Pressable onPress={() => setNoteDraft("")}>
-              <Text style={[styles.action, { color: p.accent }]}>Add note</Text>
-            </Pressable>
-            {selected && marks.some((m) => m.start < selected.end && m.end > selected.start) && (
-              <Pressable onPress={() => removeMarksIn(selected)}>
-                <Text style={[styles.action, { color: "#d33" }]}>Remove highlights & notes</Text>
-              </Pressable>
-            )}
-          </View>
-        </Pressable>
-      </Modal>
 
       <Modal
         visible={noteDraft !== null}
@@ -350,6 +449,9 @@ export default function ReaderScreen() {
       >
         <View style={styles.backdrop}>
           <View style={[styles.sheet, { backgroundColor: p.surface }]}>
+            <Text numberOfLines={2} style={{ color: p.muted, fontStyle: "italic" }}>
+              {selectedText}
+            </Text>
             <TextInput
               autoFocus
               multiline
@@ -371,7 +473,89 @@ export default function ReaderScreen() {
         </View>
       </Modal>
 
-      {/* Contents / bookmarks / highlights */}
+      <Modal
+        visible={panel === "define"}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPanel("none")}
+      >
+        <Pressable style={styles.backdrop} onPress={() => setPanel("none")}>
+          <View style={[styles.sheet, { backgroundColor: p.surface }]}>
+            <Text style={[styles.defWord, { color: p.text }]}>
+              {cleanWord(selectedText.split(" ")[0] ?? "")}
+            </Text>
+            {definition.isLoading && <ActivityIndicator color={p.accent} />}
+            {definition.error && (
+              <Text style={{ color: p.muted }}>Dictionary unavailable offline.</Text>
+            )}
+            {definition.isSuccess && !definition.data && (
+              <Text style={{ color: p.muted }}>No definition found.</Text>
+            )}
+            <ScrollView style={{ maxHeight: 280 }}>
+              {definition.data?.phonetic && (
+                <Text style={{ color: p.muted }}>{definition.data.phonetic}</Text>
+              )}
+              {definition.data?.meanings.map((m, i) => (
+                <View key={i} style={{ marginTop: 10 }}>
+                  <Text style={{ color: p.accent, fontStyle: "italic" }}>{m.partOfSpeech}</Text>
+                  {m.definitions.map((d, j) => (
+                    <Text key={j} style={{ color: p.text, marginTop: 2 }}>
+                      {j + 1}. {d}
+                    </Text>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={panel === "search"}
+        animationType="slide"
+        onRequestClose={() => setPanel("none")}
+      >
+        <View style={[styles.root, { backgroundColor: p.background, paddingTop: 48 }]}>
+          <View style={styles.searchRow}>
+            <TextInput
+              autoFocus
+              placeholder="Search in book"
+              placeholderTextColor={p.muted}
+              value={query}
+              onChangeText={setQuery}
+              style={[styles.searchInput, { color: p.text, borderColor: p.border }]}
+            />
+            <Pressable onPress={() => setPanel("none")}>
+              <Text style={[styles.tab, { color: p.accent }]}>Close</Text>
+            </Pressable>
+          </View>
+          <FlatList
+            data={searchHits}
+            keyExtractor={(h) => String(h.offset)}
+            ListEmptyComponent={
+              <Text style={[styles.center, { color: p.muted }]}>
+                {query.trim().length < 2 ? "Type at least 2 characters." : "No matches."}
+              </Text>
+            }
+            renderItem={({ item }) => (
+              <Pressable
+                style={[styles.listRow, { borderColor: p.border }]}
+                onPress={() => {
+                  setOffset(item.offset);
+                  setPanel("none");
+                  setChrome(false);
+                }}
+              >
+                <Text style={{ color: p.muted, fontSize: 12 }}>
+                  {parsed?.chapters[item.chapterIndex]?.title}
+                </Text>
+                <Text style={{ color: p.text }}>{item.snippet}</Text>
+              </Pressable>
+            )}
+          />
+        </View>
+      </Modal>
+
       <Modal
         visible={panel === "toc"}
         animationType="slide"
@@ -406,29 +590,63 @@ export default function ReaderScreen() {
               )}
             />
           ) : (
-            <AnnotationList
-              items={annotations.filter((a) =>
-                tocTab === "bookmarks"
-                  ? a.type === "BOOKMARK"
-                  : a.type === "HIGHLIGHT" || a.type === "NOTE",
+            <>
+              {tocTab === "highlights" && (
+                <Pressable onPress={shareNotes}>
+                  <Text style={[styles.action, { color: p.accent, textAlign: "center" }]}>
+                    Share / export highlights
+                  </Text>
+                </Pressable>
               )}
-              text={(a) => annotationPreview(a, parsedText(parsed), pages)}
-              onOpen={(a) => {
-                setOffset(Number(a.locationStart));
-                setPanel("none");
-                setChrome(false);
-              }}
-              onDelete={async (a) => {
-                await api.deleteAnnotation(a.id);
-                await refreshAnnotations();
-              }}
-              palette={p}
-            />
+              <FlatList
+                data={annotations.filter((a) =>
+                  tocTab === "bookmarks"
+                    ? a.type === "BOOKMARK"
+                    : a.type === "HIGHLIGHT" || a.type === "NOTE",
+                )}
+                keyExtractor={(a) => a.id}
+                ListEmptyComponent={
+                  <Text style={[styles.center, { color: p.muted }]}>Nothing here yet.</Text>
+                }
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={[styles.listRow, { borderColor: p.border }]}
+                    onPress={() => {
+                      setOffset(Number(item.locationStart));
+                      setPanel("none");
+                      setChrome(false);
+                    }}
+                    onLongPress={() =>
+                      Alert.alert("Delete?", undefined, [
+                        { text: "Cancel" },
+                        {
+                          text: "Delete",
+                          style: "destructive",
+                          onPress: async () => {
+                            await deleteAnnotation(item.id);
+                            await refreshAnnotations();
+                          },
+                        },
+                      ])
+                    }
+                  >
+                    <Text numberOfLines={3} style={{ color: p.text }}>
+                      {(parsed && item.locationEnd
+                        ? textForRange(parsed, Number(item.locationStart), Number(item.locationEnd))
+                        : "") ||
+                        `Page ${pages.findIndex((pg) => pg.start <= Number(item.locationStart) && pg.end > Number(item.locationStart)) + 1}`}
+                    </Text>
+                    {item.noteText && (
+                      <Text style={{ color: p.accent, marginTop: 4 }}>{item.noteText}</Text>
+                    )}
+                  </Pressable>
+                )}
+              />
+            </>
           )}
         </View>
       </Modal>
 
-      {/* Display settings */}
       <Modal
         visible={panel === "settings"}
         transparent
@@ -438,11 +656,11 @@ export default function ReaderScreen() {
         <Pressable style={styles.backdrop} onPress={() => setPanel("none")}>
           <View style={[styles.sheet, { backgroundColor: p.surface }]}>
             <View style={styles.row}>
-              <Pressable onPress={() => setFontSize(fontSize - 2)}>
+              <Pressable onPress={() => settings.setFontSize(fontSize - 2)}>
                 <Text style={[styles.action, { color: p.accent }]}>A−</Text>
               </Pressable>
               <Text style={{ color: p.text }}>{fontSize}pt</Text>
-              <Pressable onPress={() => setFontSize(fontSize + 2)}>
+              <Pressable onPress={() => settings.setFontSize(fontSize + 2)}>
                 <Text style={[styles.action, { color: p.accent }]}>A+</Text>
               </Pressable>
             </View>
@@ -450,7 +668,7 @@ export default function ReaderScreen() {
               {(["light", "sepia", "dark"] as const).map((t) => (
                 <Pressable
                   key={t}
-                  onPress={() => setTheme(t)}
+                  onPress={() => settings.setTheme(t)}
                   style={[
                     styles.themeChip,
                     {
@@ -464,7 +682,31 @@ export default function ReaderScreen() {
               ))}
             </View>
             <View style={styles.row}>
-              <Pressable onPress={() => setSerif(true)}>
+              <Text style={{ color: p.muted }}>Spacing</Text>
+              {[1.3, 1.5, 1.8].map((v) => (
+                <Pressable key={v} onPress={() => settings.setLineHeight(v)}>
+                  <Text style={[styles.action, { color: lineHeight === v ? p.accent : p.muted }]}>
+                    {v}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.row}>
+              <Text style={{ color: p.muted }}>Margins</Text>
+              {[
+                ["Narrow", 14],
+                ["Normal", 24],
+                ["Wide", 40],
+              ].map(([label, v]) => (
+                <Pressable key={label} onPress={() => settings.setMargin(v as number)}>
+                  <Text style={[styles.action, { color: margin === v ? p.accent : p.muted }]}>
+                    {label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.row}>
+              <Pressable onPress={() => settings.setSerif(true)}>
                 <Text
                   style={[
                     styles.action,
@@ -474,8 +716,17 @@ export default function ReaderScreen() {
                   Serif
                 </Text>
               </Pressable>
-              <Pressable onPress={() => setSerif(false)}>
+              <Pressable onPress={() => settings.setSerif(false)}>
                 <Text style={[styles.action, { color: !serif ? p.accent : p.muted }]}>Sans</Text>
+              </Pressable>
+            </View>
+            <View style={styles.row}>
+              <Pressable onPress={() => changeBrightness(-0.1)}>
+                <Text style={[styles.action, { color: p.accent }]}>🔅</Text>
+              </Pressable>
+              <Text style={{ color: p.text }}>Brightness {Math.round(brightness * 100)}%</Text>
+              <Pressable onPress={() => changeBrightness(0.1)}>
+                <Text style={[styles.action, { color: p.accent }]}>🔆</Text>
               </Pressable>
             </View>
           </View>
@@ -485,68 +736,18 @@ export default function ReaderScreen() {
   );
 }
 
-function parsedText(parsed: { chapters: { text: string }[] } | undefined): string {
-  return parsed ? parsed.chapters.map((c) => c.text).join("\n") : "";
-}
-
-function annotationPreview(
-  a: Annotation,
-  fullText: string,
-  pages: { start: number; text: string }[],
-): string {
-  if (a.noteText) return a.noteText;
-  const start = Number(a.locationStart);
-  const end = a.locationEnd ? Number(a.locationEnd) : start + 120;
-  // Global offsets include one separator per chapter, so fall back to the page text when it is cheaper.
-  const page = pages.find(
-    (pg, i) => pg.start <= start && (pages[i + 1]?.start ?? Infinity) > start,
-  );
-  const snippet = page
-    ? page.text.slice(Math.max(0, start - page.start), Math.max(0, end - page.start))
-    : fullText.slice(start, end);
-  return snippet.slice(0, 160) || "Bookmark";
-}
-
-function AnnotationList(props: {
-  items: Annotation[];
-  text: (a: Annotation) => string;
-  onOpen: (a: Annotation) => void;
-  onDelete: (a: Annotation) => void;
-  palette: (typeof palettes)["light"];
-}) {
-  const { items, text, onOpen, onDelete, palette: p } = props;
-  return (
-    <FlatList
-      data={items}
-      keyExtractor={(a) => a.id}
-      ListEmptyComponent={
-        <Text style={[styles.center, { color: p.muted }]}>Nothing here yet.</Text>
-      }
-      renderItem={({ item }) => (
-        <Pressable
-          style={[styles.listRow, { borderColor: p.border }]}
-          onPress={() => onOpen(item)}
-          onLongPress={() =>
-            Alert.alert("Delete?", undefined, [
-              { text: "Cancel" },
-              { text: "Delete", style: "destructive", onPress: () => onDelete(item) },
-            ])
-          }
-        >
-          <Text numberOfLines={3} style={{ color: p.text }}>
-            {text(item)}
-          </Text>
-        </Pressable>
-      )}
-    />
-  );
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1 },
   flex: { flex: 1 },
   center: { marginTop: 80, textAlign: "center", padding: 24 },
-  footer: { textAlign: "center", fontSize: 12, paddingBottom: 14 },
+  footer: {
+    position: "absolute",
+    bottom: 10,
+    left: 0,
+    right: 0,
+    textAlign: "center",
+    fontSize: 12,
+  },
   topBar: {
     position: "absolute",
     top: 0,
@@ -557,17 +758,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
-    gap: 18,
+    gap: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   bar: { fontSize: 18 },
-  barTitle: { flex: 1, textAlign: "center", fontWeight: "600" },
+  barTitle: { flex: 1, fontWeight: "600" },
+  selectionBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   backdrop: { flex: 1, backgroundColor: "#0006", justifyContent: "flex-end" },
   sheet: { padding: 20, gap: 16, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
-  sheetTitle: { fontStyle: "italic" },
   row: { flexDirection: "row", justifyContent: "space-around", alignItems: "center" },
-  swatch: { width: 40, height: 40, borderRadius: 20 },
-  action: { fontSize: 17, padding: 6 },
+  swatch: { width: 34, height: 34, borderRadius: 17 },
+  action: { fontSize: 16, padding: 6 },
   noteInput: {
     minHeight: 100,
     borderWidth: 1,
@@ -579,4 +791,13 @@ const styles = StyleSheet.create({
   tabs: { flexDirection: "row", justifyContent: "space-around", paddingBottom: 12 },
   tab: { fontSize: 16, textTransform: "capitalize" },
   listRow: { padding: 16, borderBottomWidth: StyleSheet.hairlineWidth },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    gap: 12,
+    paddingBottom: 8,
+  },
+  searchInput: { flex: 1, borderWidth: 1, borderRadius: 8, padding: 10 },
+  defWord: { fontSize: 24, fontWeight: "700" },
 });

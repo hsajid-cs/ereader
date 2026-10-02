@@ -4,7 +4,9 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, AppState, View } from "react-native";
+
+import { setOnSynced, syncNow } from "./src/offline/store";
 
 import type { RootStackParamList, TabParamList } from "./src/navigation/types";
 import AuthScreen from "./src/screens/AuthScreen";
@@ -40,6 +42,21 @@ export default function App() {
     void load();
     void restore();
   }, [load, restore]);
+
+  useEffect(() => {
+    setOnSynced(() => void queryClient.invalidateQueries());
+    if (user) void syncNow();
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active" && useAuth.getState().user) void syncNow();
+    });
+    const timer = setInterval(() => {
+      if (useAuth.getState().user) void syncNow();
+    }, 30_000);
+    return () => {
+      sub.remove();
+      clearInterval(timer);
+    };
+  }, [user]);
 
   const navTheme = {
     ...(theme === "dark" ? DarkTheme : DefaultTheme),

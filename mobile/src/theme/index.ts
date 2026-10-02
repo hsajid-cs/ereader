@@ -44,6 +44,10 @@ interface SettingsState {
   theme: ReaderTheme;
   fontSize: number;
   serif: boolean;
+  lineHeight: number;
+  margin: number;
+  setLineHeight: (n: number) => void;
+  setMargin: (n: number) => void;
   setTheme: (t: ReaderTheme) => void;
   setFontSize: (n: number) => void;
   setSerif: (b: boolean) => void;
@@ -53,14 +57,27 @@ interface SettingsState {
 const KEY = "ereader.settings";
 
 function persist(get: () => SettingsState) {
-  const { theme, fontSize, serif } = get();
-  SecureStore.setItemAsync(KEY, JSON.stringify({ theme, fontSize, serif })).catch(() => undefined);
+  const { theme, fontSize, serif, lineHeight, margin } = get();
+  SecureStore.setItemAsync(
+    KEY,
+    JSON.stringify({ theme, fontSize, serif, lineHeight, margin }),
+  ).catch(() => undefined);
 }
 
 export const useSettings = create<SettingsState>((set, get) => ({
   theme: "light",
   fontSize: 18,
   serif: true,
+  lineHeight: 1.5,
+  margin: 24,
+  setLineHeight: (lineHeight) => {
+    set({ lineHeight });
+    persist(get);
+  },
+  setMargin: (margin) => {
+    set({ margin });
+    persist(get);
+  },
   setTheme: (theme) => {
     set({ theme });
     persist(get);

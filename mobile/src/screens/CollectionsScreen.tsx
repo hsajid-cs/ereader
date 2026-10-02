@@ -1,15 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigation } from "@react-navigation/native";
 import { useState } from "react";
 import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { api } from "../api/client";
+import { cached } from "../offline/store";
 import { usePalette } from "../theme";
 
 export default function CollectionsScreen() {
   const p = usePalette();
   const qc = useQueryClient();
+  const navigation = useNavigation<{
+    navigate: (screen: "Library", params: { collectionId: string }) => void;
+  }>();
   const [name, setName] = useState("");
-  const { data, error } = useQuery({ queryKey: ["collections"], queryFn: api.listCollections });
+  const { data, error } = useQuery({
+    queryKey: ["collections"],
+    queryFn: () => cached("collections", api.listCollections),
+  });
   const refresh = () => qc.invalidateQueries({ queryKey: ["collections"] });
 
   const create = useMutation({
@@ -56,6 +64,7 @@ export default function CollectionsScreen() {
         renderItem={({ item }) => (
           <Pressable
             style={[styles.row, { borderColor: p.border }]}
+            onPress={() => navigation.navigate("Library", { collectionId: item.id })}
             onLongPress={() =>
               Alert.alert(item.name, undefined, [
                 { text: "Delete", style: "destructive", onPress: () => remove.mutate(item.id) },

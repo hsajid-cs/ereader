@@ -2,12 +2,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { api } from "../api/client";
+import { cached } from "../offline/store";
 import { usePalette } from "../theme";
 
 export default function StatsScreen() {
   const p = usePalette();
   const qc = useQueryClient();
-  const { data, error } = useQuery({ queryKey: ["stats"], queryFn: api.statsSummary });
+  const { data, error } = useQuery({
+    queryKey: ["stats"],
+    queryFn: () => cached("stats", api.statsSummary),
+  });
   const setGoal = useMutation({
     mutationFn: api.setGoal,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["stats"] }),
