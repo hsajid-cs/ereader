@@ -10,6 +10,16 @@ import { toAnnotationDto } from "./dto";
 
 const annotationTypeSchema = z.enum(["HIGHLIGHT", "NOTE", "BOOKMARK", "DRAWING"]);
 
+/** Parses the optional ?type= query filter; an unknown value is a client error, not a server error. */
+function typeFilter(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const parsed = annotationTypeSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new ApiError(400, "validation_error", "Unknown annotation type");
+  }
+  return parsed.data;
+}
+
 const drawingDataSchema = z.object({
   strokes: z.array(
     z.object({
@@ -61,9 +71,9 @@ bookAnnotationsRouter.get(
   async (req: Request<{ bookId: string }>, res, next) => {
     try {
       await assertOwnsBook(req.userId!, req.params.bookId);
-      const type = typeof req.query.type === "string" ? req.query.type : undefined;
+      const type = typeFilter(req.query.type);
       const annotations = await prisma.annotation.findMany({
-        where: { bookId: req.params.bookId, ...(type ? { type: type as never } : {}) },
+        where: { bookId: req.params.bookId, ...(type ? { type } : {}) },
         orderBy: { createdAt: "asc" },
       });
       res.json(annotations.map(toAnnotationDto));
@@ -103,12 +113,12 @@ annotationsRouter.use(requireAuth);
 
 annotationsRouter.get("/", async (req, res, next) => {
   try {
-    const type = typeof req.query.type === "string" ? req.query.type : undefined;
+    const type = typeFilter(req.query.type);
     const bookId = typeof req.query.bookId === "string" ? req.query.bookId : undefined;
     const annotations = await prisma.annotation.findMany({
       where: {
         userId: req.userId!,
-        ...(type ? { type: type as never } : {}),
+        ...(type ? { type } : {}),
         ...(bookId ? { bookId } : {}),
       },
       orderBy: { createdAt: "desc" },

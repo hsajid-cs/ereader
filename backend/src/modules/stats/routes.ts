@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 
+import { prisma } from "../../db/prisma";
 import { requireAuth } from "../../middleware/auth";
+import { ApiError } from "../../middleware/errorHandler";
 import { validateBody } from "../../middleware/validate";
 import * as statsService from "./service";
 
@@ -64,6 +66,13 @@ const sessionSchema = z.object({
 
 router.post("/sessions", validateBody(sessionSchema), async (req, res, next) => {
   try {
+    const book = await prisma.book.findUnique({
+      where: { id: req.body.bookId },
+      select: { userId: true },
+    });
+    if (!book || book.userId !== req.userId) {
+      throw new ApiError(404, "not_found", "Book not found");
+    }
     const session = await statsService.recordSession(
       req.userId!,
       req.body.bookId,
