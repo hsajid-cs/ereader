@@ -18,7 +18,10 @@ import StatsScreen from "./src/screens/StatsScreen";
 import { useAuth } from "./src/store/auth";
 import { palettes, useSettings } from "./src/theme";
 
-const queryClient = new QueryClient();
+// Our queryFns fall back to the offline cache themselves, so never let React Query pause them.
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { networkMode: "always" }, mutations: { networkMode: "always" } },
+});
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 
