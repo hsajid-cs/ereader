@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ereader
+          POSTGRES_PASSWORD: ereader
+          POSTGRES_DB: ereader_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ereader"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Packages consume the shared types from dist/.
+      - run: npm run build -w @ereader/shared
+      - run: npx -w backend prisma generate
+      - run: npm run typecheck
+      - run: npm run lint
+      # Backend tests use backend/.env.test (postgres://ereader:ereader@localhost:5432/ereader_test);
+      # mobile runs logic tests plus the jest-expo component tests.
+      - run: npm test
+
+  android-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @ereader/shared
+      - name: Bundle the Android app (catches import and Metro errors)
+        run: npx expo export --platform android --output-dir /tmp/export
+        working-directory: mobile

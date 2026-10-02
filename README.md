@@ -37,8 +37,9 @@ cd backend && npx prisma migrate deploy && npm run dev     # http://localhost:40
 cd mobile && EXPO_PUBLIC_API_URL=http://192.168.1.10:4000 npx expo start
 ```
 
-Checks: `npm run typecheck`, `npm run lint`, `npm test` (the backend tests need the PostgreSQL
-database from `backend/.env.test`). An opt-in end-to-end test of the mobile API client:
+Checks (also run in CI, `.github/workflows/ci.yml`): `npm run typecheck`, `npm run lint`, `npm test`
+(the backend tests need the PostgreSQL database from `backend/.env.test`). `mobile/web-harness/` renders
+the real app in a browser for visual checks. An opt-in end-to-end test of the mobile API client:
 `E2E_SERVER=http://localhost:4001 npm test -w @ereader/mobile -- e2e` against a running backend.
 
 ## Deploy
