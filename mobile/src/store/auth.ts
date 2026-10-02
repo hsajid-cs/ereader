@@ -8,7 +8,7 @@ import {
   setSignedOutHandler,
   storeTokens,
 } from "../api/client";
-import { claimOffline, resetOffline } from "../offline/store";
+import { cacheGet, cacheSet, claimOffline, isTransient, resetOffline } from "../offline/store";
 
 interface AuthState {
   user: User | null;
@@ -50,9 +50,15 @@ export const useAuth = create<AuthState>((set) => ({
     try {
       const user = await api.me();
       await claimOffline(user.id);
+      await cacheSet("user", user);
       set({ user, ready: true });
-    } catch {
-      set({ user: null, ready: true });
+    } catch (err) {
+      // Offline (or server down) with a stored session: keep the user signed in with cached data.
+      const offlineUser =
+        isTransient(err) && (await getStoredRefreshToken())
+          ? await cacheGet<User>("user")
+          : undefined;
+      set({ user: offlineUser ?? null, ready: true });
     }
   },
 }));

@@ -7,7 +7,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "test": "jest"
+    "test": "jest",
+    "start": "prisma migrate deploy && node dist/index.js"
   },
   "dependencies": {
     "@ereader/shared": "*",
@@ -16,6 +17,7 @@
     "cors": "^2.8.5",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "jszip": "^3.10.2",
     "multer": "^2.2.0",
     "zod": "^4.4.3"
   },

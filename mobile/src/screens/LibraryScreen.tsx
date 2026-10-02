@@ -21,10 +21,6 @@ import type { RootStackParamList, TabParamList } from "../navigation/types";
 import { evictBook } from "../reader/bookCache";
 import { usePalette } from "../theme";
 
-function stripExtension(name: string) {
-  return name.replace(/\.(epub|pdf|txt)$/i, "");
-}
-
 const SORTS: { key: SortKey; label: string }[] = [
   { key: "added", label: "Recent" },
   { key: "title", label: "Title" },
@@ -96,7 +92,7 @@ export default function LibraryScreen() {
         multiple: true,
       });
       if (res.canceled) return;
-      for (const asset of res.assets) await api.uploadBook(asset, stripExtension(asset.name));
+      for (const asset of res.assets) await api.uploadBook(asset);
     },
     onSuccess: refreshBooks,
     onError: (e: Error) => Alert.alert("Import failed", e.message),

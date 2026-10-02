@@ -15,7 +15,21 @@ import type {
 } from "@ereader/shared";
 import * as SecureStore from "expo-secure-store";
 
-export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000";
+/** Server root, e.g. http://192.168.1.10:4000 (no trailing slash, no /api). */
+export const SERVER_URL = (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000").replace(
+  /\/+$/,
+  "",
+);
+export const API_URL = `${SERVER_URL}/api`;
+
+/** Image source for a book cover, authenticated; null when the book has none. */
+export function coverSource(book: Book): { uri: string; headers: Record<string, string> } | null {
+  if (!book.coverUrl) return null;
+  return {
+    uri: `${SERVER_URL}${book.coverUrl}`,
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  };
+}
 
 const REFRESH_KEY = "ereader.refreshToken";
 
@@ -129,11 +143,11 @@ export const api = {
   },
   uploadBook: (
     file: { uri: string; name: string; mimeType?: string },
-    title: string,
+    title?: string,
     author?: string,
   ) => {
     const form = new FormData();
-    form.append("title", title);
+    if (title) form.append("title", title);
     if (author) form.append("author", author);
     // React Native's FormData accepts { uri, name, type } descriptors in place of Blobs.
     form.append("file", {

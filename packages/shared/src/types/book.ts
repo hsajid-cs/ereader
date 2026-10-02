@@ -14,6 +14,7 @@ export interface Book {
 }
 
 export interface CreateBookRequest {
-  title: string;
+  /** Defaults to the EPUB metadata title, then the file name. */
+  title?: string;
   author?: string;
 }

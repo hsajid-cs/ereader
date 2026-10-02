@@ -6,9 +6,17 @@ function required(name: string): string {
   return value;
 }
 
+function productionSecret(name: string): string {
+  const value = required(name);
+  if (process.env.NODE_ENV === "production" && (value.startsWith("change-me") || value.length < 16)) {
+    throw new Error(`${name} must be a strong secret (16+ characters) in production`);
+  }
+  return value;
+}
+
 export const env = {
   port: Number(process.env.PORT ?? 4000),
-  jwtAccessSecret: required("JWT_ACCESS_SECRET"),
-  jwtRefreshSecret: required("JWT_REFRESH_SECRET"),
+  jwtAccessSecret: productionSecret("JWT_ACCESS_SECRET"),
+  jwtRefreshSecret: productionSecret("JWT_REFRESH_SECRET"),
   uploadsDir: process.env.UPLOADS_DIR ?? "./uploads",
 };

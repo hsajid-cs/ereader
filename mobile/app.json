@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "ereader",
+    "name": "Ereader",
     "slug": "ereader",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -8,13 +8,30 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ereader.app"
+      "bundleIdentifier": "com.ereader.app",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
     },
     "android": {
-      "package": "com.ereader.app"
+      "package": "com.ereader.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1f2a44"
+      },
+      "usesCleartextTraffic": true
     },
     "web": {
       "bundler": "metro"
+    },
+    "icon": "./assets/icon.png",
+    "scheme": "ereader",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1f2a44"
     }
   }
 }

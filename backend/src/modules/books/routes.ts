@@ -11,6 +11,7 @@ import { ApiError } from "../../middleware/errorHandler";
 import { validateBody } from "../../middleware/validate";
 import { storage } from "../../storage";
 import { toBookDto } from "./dto";
+import { readEpubMeta } from "./epubMeta";
 import { extensionForFormat, inferFormat } from "./format";
 
 const router = Router();
@@ -44,7 +45,7 @@ router.get("/", async (req, res, next) => {
 });
 
 const createSchema = z.object({
-  title: z.string().min(1),
+  title: z.string().min(1).optional(),
   author: z.string().optional(),
 });
 
@@ -58,6 +59,8 @@ router.post("/", upload.single("file"), async (req, res, next) => {
       throw new ApiError(400, "validation_error", parsed.error.issues[0]?.message ?? "Invalid request body");
     }
     const format = inferFormat(req.file.originalname);
+    const meta = format === "EPUB" ? await readEpubMeta(req.file.buffer) : {};
+    const fallbackTitle = req.file.originalname.replace(/\.[^.]+$/, "");
     const checksumSha256 = crypto.createHash("sha256").update(req.file.buffer).digest("hex");
 
     const existing = await prisma.book.findUnique({
@@ -71,13 +74,19 @@ router.post("/", upload.single("file"), async (req, res, next) => {
     const bookId = crypto.randomUUID();
     const storageKey = `${req.userId}/${bookId}.${extensionForFormat(format)}`;
     await storage.save(storageKey, req.file.buffer);
+    let coverStorageKey: string | undefined;
+    if (meta.cover) {
+      coverStorageKey = `${req.userId}/${bookId}.cover.${meta.cover.ext}`;
+      await storage.save(coverStorageKey, meta.cover.data);
+    }
 
     const book = await prisma.book.create({
       data: {
         id: bookId,
         userId: req.userId!,
-        title: parsed.data.title,
-        author: parsed.data.author,
+        title: parsed.data.title ?? meta.title ?? fallbackTitle,
+        author: parsed.data.author ?? meta.author,
+        coverStorageKey,
         format,
         storageKey,
         fileSizeBytes: req.file.size,
@@ -134,6 +143,29 @@ router.get("/:id/file", async (req, res, next) => {
   }
 });
 
+const COVER_TYPES: Record<string, string> = {
+  jpg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+};
+
+router.get("/:id/cover", async (req, res, next) => {
+  try {
+    const book = await loadOwnedBook(req.userId!, req.params.id);
+    if (!book.coverStorageKey) throw new ApiError(404, "not_found", "This book has no cover");
+    const ext = book.coverStorageKey.split(".").pop() ?? "";
+    res.set({
+      "Content-Type": COVER_TYPES[ext] ?? "application/octet-stream",
+      "Content-Length": String(await storage.getSize(book.coverStorageKey)),
+      "Cache-Control": "private, max-age=86400",
+    });
+    storage.getReadStream(book.coverStorageKey).pipe(res);
+  } catch (err) {
+    next(err);
+  }
+});
+
 const patchSchema = z.object({
   title: z.string().min(1).optional(),
   author: z.string().optional(),
@@ -160,6 +192,7 @@ router.delete("/:id", async (req, res, next) => {
   try {
     const book = await loadOwnedBook(req.userId!, req.params.id);
     await storage.delete(book.storageKey);
+    if (book.coverStorageKey) await storage.delete(book.coverStorageKey);
     await prisma.book.delete({ where: { id: book.id } });
     res.status(204).send();
   } catch (err) {
