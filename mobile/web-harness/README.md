@@ -19,3 +19,7 @@ node web-harness/seed.mjs                 # prints {"email": ...}
 # 4. drive the UI and write screenshots
 EMAIL=<email from step 3> OUT=/tmp/shots CHROMIUM=/path/to/chrome node web-harness/drive.mjs
 ```
+
+Page-fit check: `EMAIL=<email> CHROMIUM=/path/to/chrome node web-harness/fit.mjs` opens the book under 16 combinations of
+font size, line spacing, margins and serif/sans, flips through every page and prints how far text extends past the
+page limit (`worstOverflowPx`, negative means it fits). It guards the line-based paginator against regressions.

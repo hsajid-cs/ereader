@@ -9,6 +9,12 @@ import { refreshTokenExpiry, signAccessToken } from "./jwt";
 
 const SALT_ROUNDS = 12;
 
+/**
+ * A refresh token is single-use, but the one just replaced stays valid briefly. Without this, closing
+ * the app between the server rotating the token and the client saving the new one logs the user out.
+ */
+export const REFRESH_REUSE_GRACE_MS = 60_000;
+
 function hashRefreshToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
@@ -73,7 +79,15 @@ export async function refresh(refreshToken: string) {
     throw new ApiError(401, "invalid_refresh_token", "Refresh token is invalid or expired");
   }
   const user = await prisma.user.findUniqueOrThrow({ where: { id: stored.userId } });
-  await prisma.refreshToken.delete({ where: { id: stored.id } });
+  const graceEnds = new Date(Date.now() + REFRESH_REUSE_GRACE_MS);
+  await prisma.$transaction([
+    prisma.refreshToken.update({
+      where: { id: stored.id },
+      data: { expiresAt: stored.expiresAt < graceEnds ? stored.expiresAt : graceEnds },
+    }),
+    // Housekeeping: drop this user's tokens whose grace period (or lifetime) has ended.
+    prisma.refreshToken.deleteMany({ where: { userId: user.id, expiresAt: { lt: new Date() } } }),
+  ]);
   return issueTokens(user.id, user.email);
 }
 

@@ -169,4 +169,27 @@ describe("auth", () => {
       ).status,
     ).toBe(401);
   });
+
+  it("keeps a just-rotated refresh token valid briefly, then expires it", async () => {
+    const reg = await supertest(app)
+      .post("/api/auth/register")
+      .send({ email: "g@example.com", password: "password123" });
+    const first = await supertest(app)
+      .post("/api/auth/refresh")
+      .send({ refreshToken: reg.body.refreshToken });
+    expect(first.status).toBe(200);
+
+    // The client may have been killed before saving the new token and retries with the old one.
+    const retry = await supertest(app)
+      .post("/api/auth/refresh")
+      .send({ refreshToken: reg.body.refreshToken });
+    expect(retry.status).toBe(200);
+
+    // Once the grace period has passed the old token is dead.
+    await prisma.refreshToken.updateMany({ data: { expiresAt: new Date(Date.now() - 1000) } });
+    const late = await supertest(app)
+      .post("/api/auth/refresh")
+      .send({ refreshToken: first.body.refreshToken });
+    expect(late.status).toBe(401);
+  });
 });

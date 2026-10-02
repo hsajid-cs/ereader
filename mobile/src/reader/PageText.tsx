@@ -1,6 +1,7 @@
 import { memo, useMemo } from "react";
 import { Image, Text, type GestureResponderEvent } from "react-native";
 
+import { PARAGRAPH_GAP_EM } from "./paginate";
 import { imageIdOf, type Page } from "./types";
 import { paragraphSpans, type Mark } from "./segments";
 import { tokenizeWords, type Word } from "./words";
@@ -66,7 +67,7 @@ function PageText({
               fontSize,
               lineHeight: fontSize * lineHeight,
               fontFamily,
-              marginBottom: fontSize * 0.5,
+              marginBottom: fontSize * PARAGRAPH_GAP_EM,
             }}
           >
             {words.map((w) => {

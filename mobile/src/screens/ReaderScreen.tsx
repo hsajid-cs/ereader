@@ -30,8 +30,8 @@ import DrawingLayer from "../reader/DrawingLayer";
 import { formatExport } from "../reader/exportNotes";
 import {
   charsPerLineFromProbe,
-  charsPerPageFromProbe,
-  estimateCharsPerPage,
+  estimateCharsPerLine,
+  PARAGRAPH_GAP_EM,
   PROBE_TEXT,
   pageIndexForOffset,
   paginate,
@@ -54,6 +54,7 @@ export default function ReaderScreen() {
 }
 
 const BOTTOM = 36;
+const SAFETY_LINES = 0.75;
 const PEN_COLORS = ["#d32f2f", "#1976d2", "#388e3c", "#111111"];
 
 function TextReader({ book }: { book: Book }) {
@@ -95,7 +96,12 @@ function TextReader({ book }: { book: Book }) {
   });
 
   const parsed = bookQuery.data;
-  const textHeight = Math.max(0, area.height - margin * 2 - BOTTOM);
+  // Top padding is `margin`, bottom padding is BOTTOM (room for the footer); the rest is text. Keep a
+  // fraction of a line spare because wrapping is estimated, so a surprise extra line cannot spill out.
+  const textHeight = Math.max(
+    0,
+    area.height - margin - BOTTOM - fontSize * lineHeight * SAFETY_LINES,
+  );
   const textWidth = Math.max(0, area.width - margin * 2);
 
   // Glyph widths vary by font and device, so measure an invisible probe instead of guessing.
@@ -105,11 +111,12 @@ function TextReader({ book }: { book: Book }) {
 
   const pages = useMemo(() => {
     if (!parsed || textWidth === 0) return [];
-    const perPage =
-      charsPerLine !== null
-        ? charsPerPageFromProbe(charsPerLine, textHeight, fontSize, lineHeight)
-        : estimateCharsPerPage(textWidth, textHeight, fontSize, lineHeight);
-    return paginate(parsed, perPage);
+    return paginate(parsed, {
+      charsPerLine: charsPerLine ?? estimateCharsPerLine(textWidth, fontSize),
+      height: textHeight,
+      lineHeightPx: fontSize * lineHeight,
+      paragraphGapPx: fontSize * PARAGRAPH_GAP_EM,
+    });
   }, [parsed, textWidth, textHeight, fontSize, lineHeight, charsPerLine]);
   const total = useMemo(() => (parsed ? totalLength(parsed) : 0), [parsed]);
 
