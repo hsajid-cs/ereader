@@ -40,8 +40,7 @@ export const useAuth = create<AuthState>((set) => ({
   async restore() {
     // Tokens are refreshed lazily; a successful /users/me confirms the stored session.
     try {
-      const { request } = await import("../api/client");
-      const user = await request<User>("/users/me");
+      const user = await api.me();
       set({ user, ready: true });
     } catch {
       set({ user: null, ready: true });
