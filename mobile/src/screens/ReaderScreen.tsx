@@ -23,6 +23,7 @@ import {
 
 import { createAnnotation, deleteAnnotation, loadAnnotations, loadProgress } from "../offline/data";
 import type { RootStackParamList } from "../navigation/types";
+import { formatTimeLeft, minutesLeft } from "../lib/readingTime";
 import { loadBook } from "../reader/bookCache";
 import { lookup } from "../reader/dictionary";
 import DrawingLayer from "../reader/DrawingLayer";
@@ -352,7 +353,7 @@ function TextReader({ book }: { book: Book }) {
       {page && (
         <Text style={[styles.footer, { color: p.muted }]}>
           {parsed?.chapters[page.chapterIndex]?.title} · {percent}% · Page {pageIndex + 1} of{" "}
-          {pages.length}
+          {pages.length} · {formatTimeLeft(minutesLeft(total, page.start))}
           {hiddenDrawings ? " · drawings hidden at this size" : ""}
         </Text>
       )}

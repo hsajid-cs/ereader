@@ -37,3 +37,20 @@ test("filterBooks splits unread / reading / finished", () => {
 test("coverColor is stable", () => {
   expect(coverColor("Dune")).toBe(coverColor("Dune"));
 });
+
+import { shortDay, toBars } from "./chart";
+
+test("toBars scales to the larger of goal and data and flags goal days", () => {
+  const { bars, goalLine } = toBars(
+    [
+      { date: "2026-03-09", minutes: 15 },
+      { date: "2026-03-10", minutes: 60 },
+    ],
+    30,
+  );
+  expect(goalLine).toBe(0.5);
+  expect(bars.map((b) => b.height)).toEqual([0.25, 1]);
+  expect(bars.map((b) => b.metGoal)).toEqual([false, true]);
+  expect(bars.map((b) => b.label)).toEqual(["M", "T"]);
+  expect(shortDay("2026-03-08")).toBe("S");
+});

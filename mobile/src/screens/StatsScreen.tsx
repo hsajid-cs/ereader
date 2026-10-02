@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { api } from "../api/client";
+import { toBars } from "../lib/chart";
 import { cached } from "../offline/store";
 import { usePalette } from "../theme";
 
@@ -11,6 +12,10 @@ export default function StatsScreen() {
   const { data, error } = useQuery({
     queryKey: ["stats"],
     queryFn: () => cached("stats", api.statsSummary),
+  });
+  const daily = useQuery({
+    queryKey: ["stats", "daily"],
+    queryFn: () => cached("stats-daily", () => api.statsDaily(14)),
   });
   const setGoal = useMutation({
     mutationFn: api.setGoal,
@@ -42,6 +47,44 @@ export default function StatsScreen() {
           </Pressable>
         </View>
       </View>
+      <View style={[styles.card, { backgroundColor: p.surface }]}>
+        <Text style={{ color: p.muted }}>Last 14 days</Text>
+        <View style={styles.chart}>
+          {(() => {
+            const { bars, goalLine } = toBars(daily.data ?? [], goal);
+            return (
+              <>
+                <View
+                  style={[styles.goalLine, { bottom: `${goalLine * 100}%`, borderColor: p.muted }]}
+                />
+                {bars.map((b, i) => (
+                  <View key={i} style={styles.barCol}>
+                    <View
+                      style={[
+                        styles.bar,
+                        {
+                          height: `${Math.max(b.height * 100, b.minutes > 0 ? 3 : 0)}%`,
+                          backgroundColor: b.metGoal ? p.accent : p.muted,
+                        },
+                      ]}
+                    />
+                  </View>
+                ))}
+              </>
+            );
+          })()}
+        </View>
+        <View style={styles.axis}>
+          {toBars(daily.data ?? [], goal).bars.map((b, i) => (
+            <Text key={i} style={[styles.axisLabel, { color: p.muted }]}>
+              {b.label}
+            </Text>
+          ))}
+        </View>
+        <Text style={{ color: p.muted, fontSize: 12 }}>
+          Dashed line is your daily goal; highlighted bars met it.
+        </Text>
+      </View>
       <View style={styles.tiles}>
         <View style={[styles.card, styles.tile, { backgroundColor: p.surface }]}>
           <Text style={{ color: p.muted }}>This week</Text>
@@ -72,4 +115,10 @@ const styles = StyleSheet.create({
   },
   step: { fontSize: 18, padding: 6 },
   error: { color: "#c00" },
+  chart: { height: 120, flexDirection: "row", alignItems: "flex-end", gap: 4, marginTop: 8 },
+  barCol: { flex: 1, height: "100%", justifyContent: "flex-end" },
+  bar: { width: "100%", borderRadius: 3 },
+  goalLine: { position: "absolute", left: 0, right: 0, borderTopWidth: 1, borderStyle: "dashed" },
+  axis: { flexDirection: "row", gap: 4 },
+  axisLabel: { flex: 1, textAlign: "center", fontSize: 10 },
 });

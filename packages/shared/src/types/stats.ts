@@ -25,3 +25,9 @@ export interface StatsSummary {
   currentStreakDays: number;
   goal: ReadingGoal;
 }
+
+export interface DailyReading {
+  /** Local calendar day, YYYY-MM-DD. */
+  date: string;
+  minutes: number;
+}

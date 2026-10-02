@@ -1,39 +1,23 @@
 import { prisma } from "../../db/prisma";
 
-function startOfUtcDay(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-}
+import { currentStreak, dailyMinutes, dayIndex, sumSeconds } from "./days";
 
-function addDays(date: Date, days: number): Date {
-  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
-}
+const HISTORY_DAYS_MAX = 90;
 
-export async function getSummary(userId: string) {
-  const now = new Date();
-  const todayStart = startOfUtcDay(now);
-  const weekStart = addDays(todayStart, -6);
-
-  const sessions = await prisma.readingSession.findMany({
-    where: { userId, startedAt: { gte: addDays(todayStart, -60) } },
+async function recentSessions(userId: string, days: number, now: Date) {
+  return prisma.readingSession.findMany({
+    // One extra day each side covers every timezone.
+    where: {
+      userId,
+      startedAt: { gte: new Date(now.getTime() - (days + 2) * 24 * 60 * 60 * 1000) },
+    },
     select: { startedAt: true, durationSeconds: true },
   });
+}
 
-  const todaySeconds = sessions
-    .filter((s) => s.startedAt >= todayStart)
-    .reduce((sum, s) => sum + s.durationSeconds, 0);
-
-  const weekSeconds = sessions
-    .filter((s) => s.startedAt >= weekStart)
-    .reduce((sum, s) => sum + s.durationSeconds, 0);
-
-  const daysWithReading = new Set(sessions.map((s) => startOfUtcDay(s.startedAt).getTime()));
-
-  let streak = 0;
-  let cursor = todayStart;
-  while (daysWithReading.has(cursor.getTime())) {
-    streak += 1;
-    cursor = addDays(cursor, -1);
-  }
+export async function getSummary(userId: string, tzOffsetMinutes = 0, now = new Date()) {
+  const sessions = await recentSessions(userId, 60, now);
+  const today = dayIndex(now, tzOffsetMinutes);
 
   const goal = await prisma.readingGoal.upsert({
     where: { userId },
@@ -42,11 +26,21 @@ export async function getSummary(userId: string) {
   });
 
   return {
-    todayMinutes: Math.round(todaySeconds / 60),
-    weekMinutes: Math.round(weekSeconds / 60),
-    currentStreakDays: streak,
+    todayMinutes: Math.round(sumSeconds(sessions, today, today, tzOffsetMinutes) / 60),
+    weekMinutes: Math.round(sumSeconds(sessions, today - 6, today, tzOffsetMinutes) / 60),
+    currentStreakDays: currentStreak(sessions, now, tzOffsetMinutes),
     goal: { userId: goal.userId, dailyMinutesGoal: goal.dailyMinutesGoal },
   };
+}
+
+export async function getDaily(
+  userId: string,
+  days: number,
+  tzOffsetMinutes = 0,
+  now = new Date(),
+) {
+  const n = Math.min(HISTORY_DAYS_MAX, Math.max(1, days));
+  return dailyMinutes(await recentSessions(userId, n, now), n, now, tzOffsetMinutes);
 }
 
 export async function getGoal(userId: string) {

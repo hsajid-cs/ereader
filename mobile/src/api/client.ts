@@ -6,6 +6,7 @@ import type {
   Collection,
   CreateAnnotationRequest,
   CreateReadingSessionRequest,
+  DailyReading,
   ReadingGoal,
   ReadingProgress,
   StatsSummary,
@@ -120,6 +121,9 @@ export async function fetchBinary(path: string, retry = true): Promise<ArrayBuff
   return res.arrayBuffer();
 }
 
+/** Minutes east of UTC, matching what the server expects. */
+const tzOffset = () => -new Date().getTimezoneOffset();
+
 const json = (method: string, body: unknown): RequestInit => ({
   method,
   body: JSON.stringify(body),
@@ -193,7 +197,8 @@ export const api = {
   removeFromCollection: (id: string, bookId: string) =>
     request<void>(`/collections/${id}/books/${bookId}`, { method: "DELETE" }),
 
-  statsSummary: () => request<StatsSummary>("/stats/summary"),
+  statsSummary: () => request<StatsSummary>(`/stats/summary?tz=${tzOffset()}`),
+  statsDaily: (days = 14) => request<DailyReading[]>(`/stats/daily?days=${days}&tz=${tzOffset()}`),
   setGoal: (dailyMinutesGoal: number) =>
     request<ReadingGoal>("/stats/goal", json("PUT", { dailyMinutesGoal })),
   logSession: (body: CreateReadingSessionRequest) =>

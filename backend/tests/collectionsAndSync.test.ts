@@ -74,6 +74,12 @@ describe("stats", () => {
     expect(summaryRes.body.todayMinutes).toBe(10);
     expect(summaryRes.body.currentStreakDays).toBe(1);
 
+    const dailyRes = await auth(supertest(app).get("/api/stats/daily?days=3"));
+    expect(dailyRes.status).toBe(200);
+    expect(dailyRes.body).toHaveLength(3);
+    expect(dailyRes.body[2].minutes).toBe(10);
+    expect(dailyRes.body[0].minutes).toBe(0);
+
     const goalRes = await auth(supertest(app).put("/api/stats/goal")).send({
       dailyMinutesGoal: 45,
     });
