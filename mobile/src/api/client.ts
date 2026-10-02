@@ -23,15 +23,6 @@ export const SERVER_URL = (process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:
 );
 export const API_URL = `${SERVER_URL}/api`;
 
-/** Image source for a book cover, authenticated; null when the book has none. */
-export function coverSource(book: Book): { uri: string; headers: Record<string, string> } | null {
-  if (!book.coverUrl) return null;
-  return {
-    uri: `${SERVER_URL}${book.coverUrl}`,
-    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-  };
-}
-
 const REFRESH_KEY = "ereader.refreshToken";
 
 export class ApiError extends Error {

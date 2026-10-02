@@ -29,7 +29,10 @@ import { lookup } from "../reader/dictionary";
 import DrawingLayer from "../reader/DrawingLayer";
 import { formatExport } from "../reader/exportNotes";
 import {
+  charsPerLineFromProbe,
+  charsPerPageFromProbe,
   estimateCharsPerPage,
+  PROBE_TEXT,
   pageIndexForOffset,
   paginate,
   totalLength,
@@ -95,10 +98,19 @@ function TextReader({ book }: { book: Book }) {
   const textHeight = Math.max(0, area.height - margin * 2 - BOTTOM);
   const textWidth = Math.max(0, area.width - margin * 2);
 
+  // Glyph widths vary by font and device, so measure an invisible probe instead of guessing.
+  const probeKey = `${textWidth}|${fontSize}|${lineHeight}|${serif}`;
+  const [probe, setProbe] = useState<{ key: string; charsPerLine: number } | null>(null);
+  const charsPerLine = probe?.key === probeKey ? probe.charsPerLine : null;
+
   const pages = useMemo(() => {
     if (!parsed || textWidth === 0) return [];
-    return paginate(parsed, estimateCharsPerPage(textWidth, textHeight, fontSize, lineHeight));
-  }, [parsed, textWidth, textHeight, fontSize, lineHeight]);
+    const perPage =
+      charsPerLine !== null
+        ? charsPerPageFromProbe(charsPerLine, textHeight, fontSize, lineHeight)
+        : estimateCharsPerPage(textWidth, textHeight, fontSize, lineHeight);
+    return paginate(parsed, perPage);
+  }, [parsed, textWidth, textHeight, fontSize, lineHeight, charsPerLine]);
   const total = useMemo(() => (parsed ? totalLength(parsed) : 0), [parsed]);
 
   useEffect(() => {
@@ -319,6 +331,34 @@ function TextReader({ book }: { book: Book }) {
 
   return (
     <View style={[styles.root, { backgroundColor: p.background }]}>
+      {textWidth > 0 && (
+        <Text
+          key={probeKey}
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          onLayout={(e) =>
+            setProbe({
+              key: probeKey,
+              charsPerLine: charsPerLineFromProbe(
+                e.nativeEvent.layout.height,
+                fontSize,
+                lineHeight,
+              ),
+            })
+          }
+          style={{
+            position: "absolute",
+            opacity: 0,
+            width: textWidth,
+            fontSize,
+            lineHeight: fontSize * lineHeight,
+            fontFamily,
+          }}
+        >
+          {PROBE_TEXT}
+        </Text>
+      )}
       <View
         testID="reader-area"
         style={styles.flex}
@@ -359,6 +399,14 @@ function TextReader({ book }: { book: Book }) {
           </>
         )}
       </View>
+
+      {bookmarkHere && (
+        <View
+          testID="bookmark-ribbon"
+          pointerEvents="none"
+          style={[styles.ribbon, { backgroundColor: p.accent }]}
+        />
+      )}
 
       {page && (
         <Text style={[styles.footer, { color: p.muted }]}>
@@ -757,6 +805,15 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   flex: { flex: 1 },
   center: { marginTop: 80, textAlign: "center", padding: 24 },
+  ribbon: {
+    position: "absolute",
+    top: 0,
+    right: 28,
+    width: 18,
+    height: 34,
+    borderBottomLeftRadius: 2,
+    borderBottomRightRadius: 2,
+  },
   footer: {
     position: "absolute",
     bottom: 10,

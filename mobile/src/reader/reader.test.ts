@@ -100,3 +100,14 @@ test("paginate puts each image on its own figure page and keeps offsets consiste
   for (const pg of pages) expect(text.slice(pg.start, pg.end).trim()).toBe(pg.text);
   expect(pageIndexForOffset(pages, pages[1].start)).toBe(1);
 });
+
+import { charsPerLineFromProbe, charsPerPageFromProbe, PROBE_TEXT } from "./paginate";
+
+test("probe measurement converts to a page capacity", () => {
+  // The probe wrapped into 6 lines of 18pt/1.5 text.
+  const cpl = charsPerLineFromProbe(6 * 18 * 1.5, 18, 1.5);
+  expect(cpl).toBeCloseTo(PROBE_TEXT.length / 6);
+  // 20 lines fit; 8% is held back for ragged edges and paragraph gaps.
+  expect(charsPerPageFromProbe(cpl, 20 * 27, 18, 1.5)).toBe(Math.floor(cpl * 20 * 0.92));
+  expect(charsPerPageFromProbe(10, 1, 18, 1.5)).toBeGreaterThanOrEqual(100);
+});

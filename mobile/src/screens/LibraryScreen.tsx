@@ -7,17 +7,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { api } from "../api/client";
-import {
-  coverColor,
-  filterBooks,
-  FINISHED_AT,
-  sortBooks,
-  type FilterKey,
-  type SortKey,
-} from "../lib/library";
+import { filterBooks, FINISHED_AT, sortBooks, type FilterKey, type SortKey } from "../lib/library";
 import { loadProgress } from "../offline/data";
 import { cached } from "../offline/store";
 import type { RootStackParamList, TabParamList } from "../navigation/types";
+import BookCover from "../lib/BookCover";
+import { forgetCover } from "../lib/coverCache";
 import { evictBook } from "../reader/bookCache";
 import { usePalette } from "../theme";
 
@@ -102,6 +97,7 @@ export default function LibraryScreen() {
     mutationFn: async (b: Book) => {
       await api.deleteBook(b.id);
       evictBook(b.id, b.format);
+      forgetCover(b.id);
     },
     onSuccess: refreshBooks,
   });
@@ -128,18 +124,7 @@ export default function LibraryScreen() {
   function renderBook({ item }: { item: Book }) {
     const pct = Math.round(progress[item.id] ?? 0);
     const label = pct >= FINISHED_AT ? "Finished" : pct === 0 ? "New" : `${pct}% read`;
-    const cover = (
-      <View
-        style={[
-          grid ? styles.coverGrid : styles.cover,
-          { backgroundColor: coverColor(item.title) },
-        ]}
-      >
-        <Text style={styles.coverText} numberOfLines={4}>
-          {item.title}
-        </Text>
-      </View>
-    );
+    const cover = <BookCover book={item} style={grid ? styles.coverGrid : styles.cover} />;
     return (
       <Pressable
         style={grid ? styles.gridItem : [styles.row, { borderColor: p.border }]}
@@ -190,24 +175,28 @@ export default function LibraryScreen() {
         </Pressable>
       </View>
 
-      <FlatList
-        horizontal
-        data={[
-          { id: undefined as string | undefined, name: "All books" },
-          ...(collections.data ?? []),
-        ]}
-        keyExtractor={(c) => c.id ?? "all"}
-        style={styles.chips}
-        showsHorizontalScrollIndicator={false}
-        renderItem={({ item }) => (
-          <Pressable
-            onPress={() => setCollectionId(item.id)}
-            style={[styles.chip, { borderColor: collectionId === item.id ? p.accent : p.border }]}
-          >
-            <Text style={{ color: collectionId === item.id ? p.accent : p.text }}>{item.name}</Text>
-          </Pressable>
-        )}
-      />
+      {(collections.data?.length ?? 0) > 0 && (
+        <FlatList
+          horizontal
+          data={[
+            { id: undefined as string | undefined, name: "All books" },
+            ...(collections.data ?? []),
+          ]}
+          keyExtractor={(c) => c.id ?? "all"}
+          style={styles.chips}
+          showsHorizontalScrollIndicator={false}
+          renderItem={({ item }) => (
+            <Pressable
+              onPress={() => setCollectionId(item.id)}
+              style={[styles.chip, { borderColor: collectionId === item.id ? p.accent : p.border }]}
+            >
+              <Text style={{ color: collectionId === item.id ? p.accent : p.text }}>
+                {item.name}
+              </Text>
+            </Pressable>
+          )}
+        />
+      )}
       <FlatList
         horizontal
         data={FILTERS}
@@ -405,7 +394,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 6,
   },
-  coverText: { color: "#fff", fontSize: 10, fontWeight: "700" },
   gridContent: { paddingHorizontal: 12 },
   gridItem: { width: "33.33%", padding: 6 },
   title: { fontSize: 16, fontWeight: "600" },

@@ -27,6 +27,7 @@ jest.mock("expo-secure-store", () => ({
   setItemAsync: async () => undefined,
   deleteItemAsync: async () => undefined,
 }));
+jest.mock("../lib/coverCache", () => ({ loadCover: async () => null, forgetCover: jest.fn() }));
 jest.mock("../reader/bookCache", () => ({ evictBook: jest.fn() }));
 jest.mock("../offline/store", () => ({
   cached: (_key: string, fetcher: () => Promise<unknown>) => fetcher(),
@@ -50,7 +51,6 @@ jest.mock("../api/client", () => ({
       { id: "c1", userId: "u", name: "Sci-Fi", createdAt: "", updatedAt: "" },
     ],
   },
-  coverSource: () => null,
 }));
 
 function renderLibrary() {

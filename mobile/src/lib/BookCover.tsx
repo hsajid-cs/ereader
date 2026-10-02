@@ -1,22 +1,31 @@
 import type { Book } from "@ereader/shared";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Image, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
-import { coverSource } from "../api/client";
 import { coverColor } from "./library";
+import { loadCover } from "./coverCache";
 
 /** Real cover when the server has one, otherwise a coloured title tile. */
 export default function BookCover({ book, style }: { book: Book; style: ViewStyle }) {
-  const [failed, setFailed] = useState(false);
-  const source = failed ? null : coverSource(book);
+  const [uri, setUri] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setUri(null);
+    void loadCover(book).then((u) => alive && setUri(u));
+    return () => {
+      alive = false;
+    };
+  }, [book]);
+
   return (
     <View style={[style, styles.base, { backgroundColor: coverColor(book.title) }]}>
-      {source ? (
+      {uri ? (
         <Image
-          source={source}
+          source={{ uri }}
           style={StyleSheet.absoluteFill}
           resizeMode="cover"
-          onError={() => setFailed(true)}
+          accessibilityLabel={`Cover of ${book.title}`}
         />
       ) : (
         <Text style={styles.text} numberOfLines={4}>

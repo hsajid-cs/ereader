@@ -92,7 +92,9 @@ export default function StatsScreen() {
         </View>
         <View style={[styles.card, styles.tile, { backgroundColor: p.surface }]}>
           <Text style={{ color: p.muted }}>Streak</Text>
-          <Text style={[styles.big, { color: p.text }]}>{data?.currentStreakDays ?? 0} days</Text>
+          <Text style={[styles.big, { color: p.text }]}>
+            {data?.currentStreakDays ?? 0} {data?.currentStreakDays === 1 ? "day" : "days"}
+          </Text>
         </View>
       </View>
     </View>

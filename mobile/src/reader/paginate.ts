@@ -19,6 +19,36 @@ export function estimateCharsPerPage(
   return Math.floor(charsPerLine * lines * 0.9);
 }
 
+/** Representative English text used to measure real glyph widths on the device. */
+export const PROBE_TEXT =
+  "The old lighthouse keeper watched the evening tide roll in over the rocks, thinking of letters never sent and " +
+  "ships that had long since passed. Nothing about the harbour had changed in years, yet every morning felt like " +
+  "the first page of a new story, quiet and strangely full of promise for anyone patient enough to read it.";
+
+/** Characters that fit on one line, from the measured height of PROBE_TEXT laid out at the page width. */
+export function charsPerLineFromProbe(
+  probeHeight: number,
+  fontSize: number,
+  lineHeight: number,
+): number {
+  const lines = Math.max(1, Math.round(probeHeight / (fontSize * lineHeight)));
+  return PROBE_TEXT.length / lines;
+}
+
+/**
+ * Characters per page from a measured line capacity. The 0.92 allowance covers ragged line ends
+ * and paragraph spacing, so text is never clipped at the bottom of the page.
+ */
+export function charsPerPageFromProbe(
+  charsPerLine: number,
+  height: number,
+  fontSize: number,
+  lineHeight: number,
+): number {
+  const lines = Math.max(3, Math.floor(height / (fontSize * lineHeight)));
+  return Math.max(100, Math.floor(charsPerLine * lines * 0.92));
+}
+
 /** Splits each chapter into pages, preferring paragraph then sentence then word boundaries. Images get their own page. */
 export function paginate(book: ParsedBook, charsPerPage: number): Page[] {
   const pages: Page[] = [];
