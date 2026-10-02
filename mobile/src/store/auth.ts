@@ -18,6 +18,8 @@ interface AuthState {
   signOut: () => Promise<void>;
   restore: () => Promise<void>;
   updateProfile: (displayName: string) => Promise<void>;
+  changePassword: (current: string, next: string) => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
 }
 
 export const useAuth = create<AuthState>((set) => ({
@@ -38,6 +40,16 @@ export const useAuth = create<AuthState>((set) => ({
   async signOut() {
     const refreshToken = await getStoredRefreshToken();
     if (refreshToken) await api.logout(refreshToken).catch(() => undefined);
+    await clearTokens();
+    await resetOffline();
+    set({ user: null });
+  },
+  async changePassword(current, next) {
+    // Other sessions are revoked server-side; keep this one signed in with the fresh tokens.
+    await storeTokens(await api.changePassword(current, next));
+  },
+  async deleteAccount(password) {
+    await api.deleteAccount(password);
     await clearTokens();
     await resetOffline();
     set({ user: null });

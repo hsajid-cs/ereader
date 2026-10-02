@@ -60,4 +60,20 @@ maybe("api client against a live backend", () => {
     await expect(request("/users/me")).rejects.toMatchObject({ status: 401 });
     await clearTokens();
   });
+
+  it("changes the password and deletes the account", async () => {
+    const { api, storeTokens } = client;
+    const addr = `e2e-pw-${Date.now()}@example.com`;
+    await storeTokens(await api.register(addr, "password123"));
+
+    await expect(api.changePassword("wrong-password", "newpassword1")).rejects.toMatchObject({
+      status: 403,
+    });
+    await storeTokens(await api.changePassword("password123", "newpassword1"));
+    await expect(api.login(addr, "password123")).rejects.toMatchObject({ status: 401 });
+    await storeTokens(await api.login(addr, "newpassword1"));
+
+    await api.deleteAccount("newpassword1");
+    await expect(api.login(addr, "newpassword1")).rejects.toMatchObject({ status: 401 });
+  });
 });

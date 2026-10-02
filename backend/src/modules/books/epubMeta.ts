@@ -20,7 +20,8 @@ function decode(s: string): string {
   return s
     .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
       if (e[0] === "#") {
-        const code = e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+        const code =
+          e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
         return Number.isFinite(code) ? String.fromCodePoint(code) : m;
       }
       return ENTITIES[e.toLowerCase()] ?? m;
@@ -41,7 +42,9 @@ function textOf(xml: string, tag: string): string | undefined {
 
 function resolve(base: string, rel: string): string {
   const out: string[] = [];
-  for (const part of (base ? base.split("/") : []).concat(decodeURIComponent(rel.split("#")[0]).split("/"))) {
+  for (const part of (base ? base.split("/") : []).concat(
+    decodeURIComponent(rel.split("#")[0]).split("/"),
+  )) {
     if (part === "..") out.pop();
     else if (part && part !== ".") out.push(part);
   }
@@ -67,7 +70,8 @@ export async function readEpubMeta(buffer: Buffer): Promise<EpubMeta> {
       type: attr(tag, "media-type"),
       props: attr(tag, "properties") ?? "",
     }));
-    const isImage = (i: (typeof items)[number]) => !!i.href && (i.type?.startsWith("image/") ?? /\.(jpe?g|png|gif|webp)$/i.test(i.href));
+    const isImage = (i: (typeof items)[number]) =>
+      !!i.href && (i.type?.startsWith("image/") ?? /\.(jpe?g|png|gif|webp)$/i.test(i.href));
 
     const coverId = /<meta\s[^>]*name\s*=\s*["']cover["'][^>]*>/i.exec(opf)?.[0];
     const coverIdValue = coverId ? attr(coverId, "content") : undefined;

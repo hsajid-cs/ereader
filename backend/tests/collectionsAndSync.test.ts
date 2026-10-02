@@ -32,11 +32,15 @@ function auth(req: supertest.Test) {
 
 describe("collections", () => {
   it("creates a collection, adds/removes a book, and filters the library by it", async () => {
-    const createRes = await auth(supertest(app).post("/api/collections")).send({ name: "Favorites" });
+    const createRes = await auth(supertest(app).post("/api/collections")).send({
+      name: "Favorites",
+    });
     expect(createRes.status).toBe(201);
     const collectionId = createRes.body.id;
 
-    const addRes = await auth(supertest(app).post(`/api/collections/${collectionId}/books/${bookId}`));
+    const addRes = await auth(
+      supertest(app).post(`/api/collections/${collectionId}/books/${bookId}`),
+    );
     expect(addRes.status).toBe(204);
 
     const filteredRes = await auth(supertest(app).get(`/api/books?collectionId=${collectionId}`));
@@ -47,7 +51,9 @@ describe("collections", () => {
     );
     expect(removeRes.status).toBe(204);
 
-    const afterRemoveRes = await auth(supertest(app).get(`/api/books?collectionId=${collectionId}`));
+    const afterRemoveRes = await auth(
+      supertest(app).get(`/api/books?collectionId=${collectionId}`),
+    );
     expect(afterRemoveRes.body).toHaveLength(0);
   });
 });
@@ -68,7 +74,9 @@ describe("stats", () => {
     expect(summaryRes.body.todayMinutes).toBe(10);
     expect(summaryRes.body.currentStreakDays).toBe(1);
 
-    const goalRes = await auth(supertest(app).put("/api/stats/goal")).send({ dailyMinutesGoal: 45 });
+    const goalRes = await auth(supertest(app).put("/api/stats/goal")).send({
+      dailyMinutesGoal: 45,
+    });
     expect(goalRes.status).toBe(200);
     expect(goalRes.body.dailyMinutesGoal).toBe(45);
   });

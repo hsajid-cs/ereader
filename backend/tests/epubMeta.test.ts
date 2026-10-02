@@ -4,7 +4,10 @@ import { readEpubMeta } from "../src/modules/books/epubMeta";
 
 async function makeEpub(opf: string, extra: Record<string, string | Buffer> = {}) {
   const zip = new JSZip();
-  zip.file("META-INF/container.xml", '<container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>');
+  zip.file(
+    "META-INF/container.xml",
+    '<container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>',
+  );
   zip.file("OEBPS/content.opf", opf);
   for (const [name, data] of Object.entries(extra)) zip.file(name, data);
   return zip.generateAsync({ type: "nodebuffer" });

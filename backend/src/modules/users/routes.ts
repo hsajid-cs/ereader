@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "../../db/prisma";
 import { requireAuth } from "../../middleware/auth";
 import { validateBody } from "../../middleware/validate";
-import { toUserDto } from "../auth/service";
+import { deleteAccount, toUserDto } from "../auth/service";
 
 const router = Router();
 
@@ -30,6 +30,17 @@ router.patch("/me", validateBody(patchSchema), async (req, res, next) => {
       data: { displayName: req.body.displayName },
     });
     res.json(toUserDto(user));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const deleteSchema = z.object({ password: z.string().min(1) });
+
+router.delete("/me", validateBody(deleteSchema), async (req, res, next) => {
+  try {
+    await deleteAccount(req.userId!, req.body.password);
+    res.status(204).send();
   } catch (err) {
     next(err);
   }

@@ -22,7 +22,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200
 router.get("/", async (req, res, next) => {
   try {
     const search = typeof req.query.search === "string" ? req.query.search : undefined;
-    const collectionId = typeof req.query.collectionId === "string" ? req.query.collectionId : undefined;
+    const collectionId =
+      typeof req.query.collectionId === "string" ? req.query.collectionId : undefined;
     const books = await prisma.book.findMany({
       where: {
         userId: req.userId!,
@@ -56,7 +57,11 @@ router.post("/", upload.single("file"), async (req, res, next) => {
     }
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
-      throw new ApiError(400, "validation_error", parsed.error.issues[0]?.message ?? "Invalid request body");
+      throw new ApiError(
+        400,
+        "validation_error",
+        parsed.error.issues[0]?.message ?? "Invalid request body",
+      );
     }
     const format = inferFormat(req.file.originalname);
     const meta = format === "EPUB" ? await readEpubMeta(req.file.buffer) : {};
@@ -171,22 +176,18 @@ const patchSchema = z.object({
   author: z.string().optional(),
 });
 
-router.patch(
-  "/:id",
-  validateBody(patchSchema),
-  async (req: Request<{ id: string }>, res, next) => {
-    try {
-      await loadOwnedBook(req.userId!, req.params.id);
-      const book = await prisma.book.update({
-        where: { id: req.params.id },
-        data: req.body,
-      });
-      res.json(toBookDto(book));
-    } catch (err) {
-      next(err);
-    }
-  },
-);
+router.patch("/:id", validateBody(patchSchema), async (req: Request<{ id: string }>, res, next) => {
+  try {
+    await loadOwnedBook(req.userId!, req.params.id);
+    const book = await prisma.book.update({
+      where: { id: req.params.id },
+      data: req.body,
+    });
+    res.json(toBookDto(book));
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.delete("/:id", async (req, res, next) => {
   try {

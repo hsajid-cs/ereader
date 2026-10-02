@@ -132,6 +132,9 @@ export const api = {
     request<AuthResponse>("/auth/login", json("POST", { email, password })),
   logout: (refreshToken: string) => request<void>("/auth/logout", json("POST", { refreshToken })),
   me: () => request<User>("/users/me"),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<AuthTokens>("/auth/change-password", json("POST", { currentPassword, newPassword })),
+  deleteAccount: (password: string) => request<void>("/users/me", json("DELETE", { password })),
   updateMe: (patch: { displayName?: string }) => request<User>("/users/me", json("PATCH", patch)),
 
   listBooks: (opts: { search?: string; collectionId?: string } = {}) => {

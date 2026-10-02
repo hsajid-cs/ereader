@@ -8,7 +8,10 @@ function required(name: string): string {
 
 function productionSecret(name: string): string {
   const value = required(name);
-  if (process.env.NODE_ENV === "production" && (value.startsWith("change-me") || value.length < 16)) {
+  if (
+    process.env.NODE_ENV === "production" &&
+    (value.startsWith("change-me") || value.length < 16)
+  ) {
     throw new Error(`${name} must be a strong secret (16+ characters) in production`);
   }
   return value;

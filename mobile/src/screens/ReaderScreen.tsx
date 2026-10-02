@@ -310,7 +310,11 @@ function TextReader({ book }: { book: Book }) {
 
   return (
     <View style={[styles.root, { backgroundColor: p.background }]}>
-      <View style={styles.flex} onLayout={(e: LayoutChangeEvent) => setArea(e.nativeEvent.layout)}>
+      <View
+        testID="reader-area"
+        style={styles.flex}
+        onLayout={(e: LayoutChangeEvent) => setArea(e.nativeEvent.layout)}
+      >
         {error ? (
           <Text style={[styles.center, { color: p.text }]}>{error.message}</Text>
         ) : !page ? (
@@ -318,6 +322,7 @@ function TextReader({ book }: { book: Book }) {
         ) : (
           <>
             <Pressable
+              testID="reader-page"
               style={[styles.flex, { padding: margin, paddingBottom: BOTTOM }]}
               onPress={(e) => onTap(e.nativeEvent.pageX)}
             >
@@ -357,6 +362,7 @@ function TextReader({ book }: { book: Book }) {
           {highlightColors.map((c) => (
             <Pressable
               key={c}
+              testID={`highlight-${c}`}
               onPress={() => highlight(c)}
               style={[styles.swatch, { backgroundColor: c }]}
             />

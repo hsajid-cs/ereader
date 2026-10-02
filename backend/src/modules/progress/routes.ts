@@ -36,7 +36,9 @@ async function assertOwnsBook(userId: string, bookId: string) {
 router.get("/:bookId/progress", async (req: Request<{ bookId: string }>, res, next) => {
   try {
     await assertOwnsBook(req.userId!, req.params.bookId);
-    const progress = await prisma.readingProgress.findUnique({ where: { bookId: req.params.bookId } });
+    const progress = await prisma.readingProgress.findUnique({
+      where: { bookId: req.params.bookId },
+    });
     if (!progress) {
       res.status(404).json({ error: "not_found", message: "No progress recorded for this book" });
       return;

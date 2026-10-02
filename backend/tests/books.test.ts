@@ -124,7 +124,10 @@ describe("reading progress", () => {
 
   it("derives title, author and cover from an EPUB when no title is given", async () => {
     const zip = new JSZip();
-    zip.file("META-INF/container.xml", '<container><rootfiles><rootfile full-path="c.opf"/></rootfiles></container>');
+    zip.file(
+      "META-INF/container.xml",
+      '<container><rootfiles><rootfile full-path="c.opf"/></rootfiles></container>',
+    );
     zip.file(
       "c.opf",
       '<package><metadata><dc:title>Embedded Title</dc:title><dc:creator>Embedded Author</dc:creator></metadata><manifest><item id="c" href="cover.png" media-type="image/png" properties="cover-image"/></manifest></package>',
@@ -150,7 +153,11 @@ describe("reading progress", () => {
   });
 
   it("falls back to the file name for the title and 404s a missing cover", async () => {
-    const res = await auth(supertest(app).post("/api/books")).attach("file", Buffer.from("text"), "My Story.txt");
+    const res = await auth(supertest(app).post("/api/books")).attach(
+      "file",
+      Buffer.from("text"),
+      "My Story.txt",
+    );
     expect(res.body.title).toBe("My Story");
     expect(res.body.coverUrl).toBeNull();
     const cover = await auth(supertest(app).get(`/api/books/${res.body.id}/cover`));
