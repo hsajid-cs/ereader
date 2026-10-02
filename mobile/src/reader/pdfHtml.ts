@@ -1,4 +1,4 @@
-const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174";
+export const PDFJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174";
 
 export interface PdfTheme {
   background: string;
@@ -6,7 +6,12 @@ export interface PdfTheme {
 }
 
 /** Self-contained page that renders a base64 PDF with pdf.js and reports the visible page. */
-export function pdfHtml(base64: string, startPage: number, theme: PdfTheme): string {
+export function pdfHtml(
+  base64: string,
+  startPage: number,
+  theme: PdfTheme,
+  PDFJS: string = PDFJS_CDN,
+): string {
   return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html,body{margin:0;background:${theme.background};color:${theme.text};font-family:sans-serif}
