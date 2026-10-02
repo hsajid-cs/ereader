@@ -53,3 +53,50 @@ test("paginate covers all text with monotonically increasing offsets", () => {
 test("larger fonts give fewer chars per page", () => {
   expect(estimateCharsPerPage(360, 600, 24)).toBeLessThan(estimateCharsPerPage(360, 600, 16));
 });
+
+import { IMAGE_MARK, imageIdOf, stripImages } from "./types";
+
+test("parseEpub extracts real images, resolves relative paths and drops tiny/svg ones", async () => {
+  const big = new Uint8Array(6000).fill(7);
+  const zip = new JSZip();
+  zip.file(
+    "META-INF/container.xml",
+    '<container><rootfiles><rootfile full-path="OEBPS/c.opf"/></rootfiles></container>',
+  );
+  zip.file(
+    "OEBPS/c.opf",
+    '<package><manifest><item id="a" href="text/a.xhtml"/><item id="p" href="images/pic.png" media-type="image/png"/></manifest><spine><itemref idref="a"/></spine></package>',
+  );
+  zip.file(
+    "OEBPS/text/a.xhtml",
+    '<body><h1>Pics</h1><p>Before.</p><img src="../images/pic.png" alt="x"/><p>Middle.</p><img src="../images/tiny.png"/><img src="../images/art.svg"/><p>After.</p></body>',
+  );
+  zip.file("OEBPS/images/pic.png", big);
+  zip.file("OEBPS/images/tiny.png", new Uint8Array(100));
+  zip.file("OEBPS/images/art.svg", "<svg/>");
+  const book = await parseEpub(await zip.generateAsync({ type: "uint8array" }));
+
+  expect(Object.keys(book.images ?? {})).toEqual(["img0"]);
+  expect(book.images?.img0.startsWith("data:image/png;base64,")).toBe(true);
+  const paragraphs = book.chapters[0].text.split("\n\n");
+  expect(paragraphs).toEqual([
+    "Pics",
+    "Before.",
+    `${IMAGE_MARK}img0${IMAGE_MARK}`,
+    "Middle.",
+    "After.",
+  ]);
+  expect(imageIdOf(paragraphs[2])).toBe("img0");
+  expect(imageIdOf(paragraphs[1])).toBeNull();
+  expect(stripImages(book.chapters[0].text)).not.toContain(IMAGE_MARK);
+});
+
+test("paginate puts each image on its own figure page and keeps offsets consistent", () => {
+  const marker = `${IMAGE_MARK}img0${IMAGE_MARK}`;
+  const text = `First part of the text.\n\n${marker}\n\nSecond part of the text.`;
+  const pages = paginate({ chapters: [{ title: "t", text }] }, 1000);
+  expect(pages.map((p) => !!p.figure)).toEqual([false, true, false]);
+  expect(pages[1].text).toBe(marker);
+  for (const pg of pages) expect(text.slice(pg.start, pg.end).trim()).toBe(pg.text);
+  expect(pageIndexForOffset(pages, pages[1].start)).toBe(1);
+});

@@ -1,4 +1,4 @@
-import type { Page, ParsedBook } from "./types";
+import { IMAGE_RE, type Page, type ParsedBook } from "./types";
 
 export interface PageMetrics {
   charsPerPage: number;
@@ -19,37 +19,63 @@ export function estimateCharsPerPage(
   return Math.floor(charsPerLine * lines * 0.9);
 }
 
-/** Splits each chapter into pages, preferring paragraph then sentence then word boundaries. */
+/** Splits each chapter into pages, preferring paragraph then sentence then word boundaries. Images get their own page. */
 export function paginate(book: ParsedBook, charsPerPage: number): Page[] {
   const pages: Page[] = [];
   let offset = 0;
 
   book.chapters.forEach((chapter, chapterIndex) => {
-    const text = chapter.text;
-    let pos = 0;
-    while (pos < text.length) {
-      let end = Math.min(pos + charsPerPage, text.length);
-      if (end < text.length) {
-        const window = text.slice(pos, end);
-        const cut = Math.max(
-          window.lastIndexOf("\n\n"),
-          window.lastIndexOf(". ") + 1,
-          window.lastIndexOf(" "),
-        );
-        if (cut > charsPerPage * 0.5) end = pos + cut;
-      }
-      const slice = text.slice(pos, end).replace(/^\s+/, "");
-      const lead =
-        end - pos - (end - pos > 0 ? text.slice(pos, end).replace(/^\s+/, "").length : 0);
-      pages.push({
-        start: offset + pos + lead,
-        end: offset + end,
-        chapterIndex,
-        text: slice.replace(/\s+$/, ""),
-      });
-      pos = end;
+    const full = chapter.text;
+
+    // Text runs between image markers, and the markers themselves.
+    const parts: { start: number; end: number; image: boolean }[] = [];
+    let last = 0;
+    for (const m of full.matchAll(IMAGE_RE)) {
+      if (m.index > last) parts.push({ start: last, end: m.index, image: false });
+      parts.push({ start: m.index, end: m.index + m[0].length, image: true });
+      last = m.index + m[0].length;
     }
-    offset += text.length + 1;
+    if (last < full.length) parts.push({ start: last, end: full.length, image: false });
+
+    for (const part of parts) {
+      if (part.image) {
+        pages.push({
+          start: offset + part.start,
+          end: offset + part.end,
+          chapterIndex,
+          text: full.slice(part.start, part.end),
+          figure: true,
+        });
+        continue;
+      }
+      const text = full.slice(part.start, part.end);
+      const base = offset + part.start;
+      let pos = 0;
+      while (pos < text.length) {
+        let end = Math.min(pos + charsPerPage, text.length);
+        if (end < text.length) {
+          const window = text.slice(pos, end);
+          const cut = Math.max(
+            window.lastIndexOf("\n\n"),
+            window.lastIndexOf(". ") + 1,
+            window.lastIndexOf(" "),
+          );
+          if (cut > charsPerPage * 0.5) end = pos + cut;
+        }
+        const raw = text.slice(pos, end);
+        const trimmed = raw.replace(/^\s+/, "");
+        if (trimmed.trim().length > 0) {
+          pages.push({
+            start: base + pos + (raw.length - trimmed.length),
+            end: base + end,
+            chapterIndex,
+            text: trimmed.replace(/\s+$/, ""),
+          });
+        }
+        pos = end;
+      }
+    }
+    offset += full.length + 1;
   });
   return pages;
 }

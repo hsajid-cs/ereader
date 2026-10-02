@@ -1,4 +1,4 @@
-import type { ParsedBook } from "./types";
+import { stripImages, type ParsedBook } from "./types";
 
 /** Returns the book text between two global offsets (chapters are separated by one offset unit). */
 export function textForRange(book: ParsedBook, start: number, end: number): string {
@@ -11,7 +11,7 @@ export function textForRange(book: ParsedBook, start: number, end: number): stri
     base += c.text.length + 1;
     if (base >= end) break;
   }
-  return parts.join(" ").replace(/\s+/g, " ").trim();
+  return stripImages(parts.join(" ")).replace(/\s+/g, " ").trim();
 }
 
 export function chapterIndexForOffset(book: ParsedBook, offset: number): number {

@@ -26,3 +26,24 @@ test("renders words, highlights marked ones and reports presses", async () => {
   await fireEvent(screen.getByText("Hello "), "longPress");
   expect(onWordLongPress).toHaveBeenCalledWith(expect.objectContaining({ start: 0 }));
 });
+
+test("renders a figure page as an image from the book's image map", async () => {
+  const figure = { start: 0, end: 10, chapterIndex: 0, text: "￼img0￼", figure: true };
+  await render(
+    <PageText
+      page={figure}
+      marks={[]}
+      selection={null}
+      color="#000"
+      fontSize={18}
+      lineHeight={1.5}
+      images={{ img0: "data:image/png;base64,AAAA" }}
+      imageHeight={400}
+      onWordPress={jest.fn()}
+      onWordLongPress={jest.fn()}
+    />,
+  );
+  const image = screen.getByLabelText("Illustration");
+  expect(image.props.source).toEqual({ uri: "data:image/png;base64,AAAA" });
+  expect(image.props.style).toMatchObject({ height: 400 });
+});

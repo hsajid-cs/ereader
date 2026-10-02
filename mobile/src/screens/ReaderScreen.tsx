@@ -38,6 +38,7 @@ import PageText from "../reader/PageText";
 import { textForRange } from "../reader/range";
 import { searchBook } from "../reader/search";
 import type { Mark } from "../reader/segments";
+import { stripImages } from "../reader/types";
 import { useReadingSync } from "../reader/useReadingSync";
 import { cleanWord, type Word } from "../reader/words";
 import { useAuth } from "../store/auth";
@@ -238,7 +239,14 @@ function TextReader({ book }: { book: Book }) {
   useEffect(() => {
     if (!speaking || !page) return;
     Speech.stop();
-    Speech.speak(page.text, {
+    const spoken = stripImages(page.text).trim();
+    if (!spoken) {
+      // Figure page: nothing to read, move on.
+      if (pageIndex + 1 < pages.length) goTo(pageIndex + 1);
+      else setSpeaking(false);
+      return;
+    }
+    Speech.speak(spoken, {
       onDone: () => {
         if (pageIndex + 1 < pages.length) goTo(pageIndex + 1);
         else setSpeaking(false);
@@ -335,6 +343,8 @@ function TextReader({ book }: { book: Book }) {
                 fontSize={fontSize}
                 lineHeight={lineHeight}
                 fontFamily={fontFamily}
+                images={parsed?.images}
+                imageHeight={textHeight}
                 onWordPress={onWordPress}
                 onWordLongPress={onWordLongPress}
               />

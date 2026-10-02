@@ -73,3 +73,12 @@ test("flushQueue stops on transient errors and drops permanent ones", async () =
   expect(ran).toEqual(["a", "b", "c"]);
   expect(rest.map((o) => o.id)).toEqual(["c"]);
 });
+
+test("search ignores image markers", () => {
+  const withImage = {
+    chapters: [{ title: "a", text: "Look at this.\n\n￼img0￼\n\nThe cat img0." }],
+  };
+  const hits = searchBook(withImage, "img0");
+  expect(hits).toHaveLength(1); // only the real text match, not the marker
+  expect(hits[0].snippet).not.toContain("￼");
+});

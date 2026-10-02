@@ -1,4 +1,4 @@
-import type { ParsedBook } from "./types";
+import { IMAGE_RE, stripImages, type ParsedBook } from "./types";
 
 export interface SearchHit {
   chapterIndex: number;
@@ -14,7 +14,8 @@ export function searchBook(book: ParsedBook, query: string, limit = 100): Search
   let base = 0;
   for (let ci = 0; ci < book.chapters.length; ci++) {
     const text = book.chapters[ci].text;
-    const lower = text.toLowerCase();
+    // Blank out image markers (same length) so ids like "img0" never match.
+    const lower = text.replace(IMAGE_RE, (m) => " ".repeat(m.length)).toLowerCase();
     let from = 0;
     for (;;) {
       const idx = lower.indexOf(q, from);
@@ -25,7 +26,9 @@ export function searchBook(book: ParsedBook, query: string, limit = 100): Search
         chapterIndex: ci,
         offset: base + idx,
         snippet:
-          (a > 0 ? "…" : "") + text.slice(a, b).replace(/\s+/g, " ") + (b < text.length ? "…" : ""),
+          (a > 0 ? "…" : "") +
+          stripImages(text.slice(a, b)).replace(/\s+/g, " ") +
+          (b < text.length ? "…" : ""),
       });
       if (hits.length >= limit) return hits;
       from = idx + q.length;

@@ -57,7 +57,7 @@ Build installable apps with EAS: `cd mobile && npx eas build --profile preview -
 
 ## Known limits
 
-- EPUBs are read as plain text: images and rich formatting are dropped.
+- EPUB images (above ~4 KB, not SVG) appear as full-page figures; inline styling, tables and footnote links are dropped.
 - Pages are estimated from font metrics, so breaks are approximate.
 - Highlights are stored as character offsets into the extracted text; they stay valid across font changes
   but not if the book file changes.
